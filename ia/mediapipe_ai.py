@@ -32,6 +32,7 @@ class AnalizadorMedidas:
             min_detection_confidence=0.5
         )
 
+    @staticmethod
     def _extraer_identidad_facial(resultado_rostro):
         """Extrae proporciones faciales 2D para parametrizar el avatar."""
         if not resultado_rostro.multi_face_landmarks:
