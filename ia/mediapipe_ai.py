@@ -24,7 +24,7 @@ class AnalizadorMedidas:
         # excesivo de segmentation y del modelo Pose de máxima complejidad.
         self.pose = mp_pose.Pose(
             static_image_mode=True,
-            model_complexity=1,
+            model_complexity=0,
             enable_segmentation=False,
             min_detection_confidence=0.5
         )
@@ -129,7 +129,7 @@ class AnalizadorMedidas:
         Reduce fotografías grandes antes de MediaPipe para evitar picos de
         memoria/CPU en Render. Conservamos la relación de aspecto.
         """
-        max_dimension = 1280
+        max_dimension = 768
         alto, ancho = imagen.shape[:2]
         mayor = max(alto, ancho)
 
