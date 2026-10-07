@@ -1,0 +1,363 @@
+import math
+from typing import Optional
+
+import cv2 # type: ignore
+import mediapipe as mp
+
+
+mp_pose = mp.solutions.pose
+
+
+class AnalizadorMedidas:
+    """
+    Analizador de proporciones corporales utilizando MediaPipe Pose.
+
+    Importante:
+    Una fotografía por sí sola no permite obtener centímetros exactos.
+    Para escalar las proporciones utilizamos la altura proporcionada por
+    el usuario como referencia.
+    """
+
+    def __init__(self):
+        self.pose = mp_pose.Pose(
+            static_image_mode=True,
+            model_complexity=2,
+            enable_segmentation=True,
+            min_detection_confidence=0.5
+        )
+
+    @staticmethod
+    def distancia(p1, p2):
+        """Calcula distancia entre dos puntos normalizados."""
+        return math.sqrt(
+            (p1.x - p2.x) ** 2 +
+            (p1.y - p2.y) ** 2
+        )
+
+    def analizar(self, imagen_path: str, altura_cm: float = 170):
+        """
+        Analiza una imagen y devuelve puntos corporales y proporciones.
+        """
+
+        if not imagen_path:
+            raise ValueError("No se proporcionó una imagen.")
+
+        imagen = cv2.imread(imagen_path)
+
+        if imagen is None:
+            raise ValueError(
+                f"No se pudo leer la imagen: {imagen_path}"
+            )
+
+        imagen_rgb = cv2.cvtColor(
+            imagen,
+            cv2.COLOR_BGR2RGB
+        )
+
+        resultado = self.pose.process(imagen_rgb)
+
+        if not resultado.pose_landmarks:
+            return {
+                "detectado": False,
+                "precision": 0,
+                "mensaje": "No se pudo detectar el cuerpo completo."
+            }
+
+        landmarks = resultado.pose_landmarks.landmark
+
+        # Puntos principales de MediaPipe
+        nariz = landmarks[mp_pose.PoseLandmark.NOSE]
+
+        hombro_izq = landmarks[
+            mp_pose.PoseLandmark.LEFT_SHOULDER
+        ]
+
+        hombro_der = landmarks[
+            mp_pose.PoseLandmark.RIGHT_SHOULDER
+        ]
+
+        cadera_izq = landmarks[
+            mp_pose.PoseLandmark.LEFT_HIP
+        ]
+
+        cadera_der = landmarks[
+            mp_pose.PoseLandmark.RIGHT_HIP
+        ]
+
+        rodilla_izq = landmarks[
+            mp_pose.PoseLandmark.LEFT_KNEE
+        ]
+
+        rodilla_der = landmarks[
+            mp_pose.PoseLandmark.RIGHT_KNEE
+        ]
+
+        tobillo_izq = landmarks[
+            mp_pose.PoseLandmark.LEFT_ANKLE
+        ]
+
+        tobillo_der = landmarks[
+            mp_pose.PoseLandmark.RIGHT_ANKLE
+        ]
+
+        # Confianza media de los landmarks usados. No fingimos una
+        # precisión fija: el resultado depende de la calidad de la foto.
+        landmarks_usados = [
+            nariz, hombro_izq, hombro_der, cadera_izq, cadera_der,
+            rodilla_izq, rodilla_der, tobillo_izq, tobillo_der
+        ]
+        precision = round(
+            100 * sum(float(p.visibility) for p in landmarks_usados) / len(landmarks_usados),
+            1
+        )
+
+        # Centro de hombros
+        hombros_x = (
+            hombro_izq.x + hombro_der.x
+        ) / 2
+
+        hombros_y = (
+            hombro_izq.y + hombro_der.y
+        ) / 2
+
+        # Centro de caderas
+        caderas_x = (
+            cadera_izq.x + cadera_der.x
+        ) / 2
+
+        caderas_y = (
+            cadera_izq.y + cadera_der.y
+        ) / 2
+
+        # Ancho de hombros relativo
+        ancho_hombros_relativo = self.distancia(
+            hombro_izq,
+            hombro_der
+        )
+
+        # Ancho de cadera relativo
+        ancho_cadera_relativo = self.distancia(
+            cadera_izq,
+            cadera_der
+        )
+
+        # Longitud aproximada del torso
+        longitud_torso_relativa = math.sqrt(
+            (hombros_x - caderas_x) ** 2 +
+            (hombros_y - caderas_y) ** 2
+        )
+
+        # Longitudes de piernas
+        pierna_izq_relativa = (
+            self.distancia(
+                cadera_izq,
+                rodilla_izq
+            )
+            +
+            self.distancia(
+                rodilla_izq,
+                tobillo_izq
+            )
+        )
+
+        pierna_der_relativa = (
+            self.distancia(
+                cadera_der,
+                rodilla_der
+            )
+            +
+            self.distancia(
+                rodilla_der,
+                tobillo_der
+            )
+        )
+
+        pierna_promedio = (
+            pierna_izq_relativa +
+            pierna_der_relativa
+        ) / 2
+
+        # --------------------------------------------------
+        # ESCALA
+        # --------------------------------------------------
+        #
+        # MediaPipe trabaja en coordenadas normalizadas.
+        # Utilizamos la longitud corporal estimada para
+        # convertir las proporciones a una escala aproximada.
+        #
+
+        # Para una referencia de altura más coherente usamos la distancia
+        # vertical entre cabeza y tobillos. Sigue siendo una estimación:
+        # una sola foto 2D no permite obtener medidas antropométricas exactas.
+        y_min = min(nariz.y, hombro_izq.y, hombro_der.y)
+        y_max = max(tobillo_izq.y, tobillo_der.y)
+        longitud_cuerpo = max(y_max - y_min, 0.001)
+
+        factor_escala = altura_cm / longitud_cuerpo
+
+        ancho_hombros_cm = (
+            ancho_hombros_relativo *
+            factor_escala
+        )
+
+        ancho_cadera_cm = (
+            ancho_cadera_relativo *
+            factor_escala
+        )
+
+        torso_cm = (
+            longitud_torso_relativa *
+            factor_escala
+        )
+
+        pierna_cm = (
+            pierna_promedio *
+            factor_escala
+        )
+
+        # --------------------------------------------------
+        # PUNTOS PARA EL AVATAR 3D
+        # --------------------------------------------------
+
+        puntos = {
+            "nariz": {
+                "x": round(nariz.x, 5),
+                "y": round(nariz.y, 5),
+                "z": round(nariz.z, 5)
+            },
+
+            "hombro_izquierdo": {
+                "x": round(hombro_izq.x, 5),
+                "y": round(hombro_izq.y, 5),
+                "z": round(hombro_izq.z, 5)
+            },
+
+            "hombro_derecho": {
+                "x": round(hombro_der.x, 5),
+                "y": round(hombro_der.y, 5),
+                "z": round(hombro_der.z, 5)
+            },
+
+            "cadera_izquierda": {
+                "x": round(cadera_izq.x, 5),
+                "y": round(cadera_izq.y, 5),
+                "z": round(cadera_izq.z, 5)
+            },
+
+            "cadera_derecha": {
+                "x": round(cadera_der.x, 5),
+                "y": round(cadera_der.y, 5),
+                "z": round(cadera_der.z, 5)
+            }
+        }
+
+        # --------------------------------------------------
+        # RESULTADO
+        # --------------------------------------------------
+
+        return {
+            "detectado": True,
+
+            "precision": precision,
+
+            "altura_cm": round(
+                float(altura_cm),
+                2
+            ),
+
+            "medidas_estimadas": {
+                "ancho_hombros_cm": round(
+                    ancho_hombros_cm,
+                    2
+                ),
+
+                "ancho_cadera_cm": round(
+                    ancho_cadera_cm,
+                    2
+                ),
+
+                "torso_cm": round(
+                    torso_cm,
+                    2
+                ),
+
+                "pierna_cm": round(
+                    pierna_cm,
+                    2
+                )
+            },
+
+            "proporciones": {
+                "hombros": round(
+                    ancho_hombros_relativo,
+                    5
+                ),
+
+                "cadera": round(
+                    ancho_cadera_relativo,
+                    5
+                ),
+
+                "torso": round(
+                    longitud_torso_relativa,
+                    5
+                ),
+
+                "piernas": round(
+                    pierna_promedio,
+                    5
+                )
+            },
+
+            "puntos_mapeados": puntos,
+
+            "avatar": {
+                "altura": round(
+                    float(altura_cm),
+                    2
+                ),
+
+                "escala_hombros": round(
+                    ancho_hombros_relativo /
+                    longitud_cuerpo,
+                    5
+                ),
+
+                "escala_cadera": round(
+                    ancho_cadera_relativo /
+                    longitud_cuerpo,
+                    5
+                ),
+
+                "escala_torso": round(
+                    longitud_torso_relativa /
+                    longitud_cuerpo,
+                    5
+                ),
+
+                "escala_piernas": round(
+                    pierna_promedio /
+                    longitud_cuerpo,
+                    5
+                )
+            }
+        }
+
+
+# Instancia reutilizable
+analizador_medidas = AnalizadorMedidas()
+
+
+def analizar_medidas(
+    imagen_path: str,
+    altura_cm: float = 170
+):
+    """
+    Función sencilla para utilizar el analizador
+    desde otros archivos del proyecto.
+    """
+
+    return analizador_medidas.analizar(
+        imagen_path,
+        altura_cm
+    )
