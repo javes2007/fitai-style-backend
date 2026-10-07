@@ -101,6 +101,9 @@ def normalize_identity(face: Dict[str, float] | None = None) -> Dict[str, float]
         "jaw_width": float(face.get("jaw_width", 0.50)),
         "skin_tone": float(face.get("skin_tone", 0.50)),
         "skin_variation": float(face.get("skin_variation", 0.20)),
+        "skin_hex": face.get("skin_hex"),
+        "skin_rgb": face.get("skin_rgb"),
+        "face_texture_data_url": face.get("face_texture_data_url"),
     }
 
 
@@ -138,6 +141,8 @@ def build_avatar_dna(
         },
         "skin": {
             "tone": normalize_identity(face)["skin_tone"],
+            "hex": normalize_identity(face).get("skin_hex"),
+            "rgb": normalize_identity(face).get("skin_rgb"),
             "roughness": 0.46 + 0.20 * ap["skin_elasticity_loss"],
             "subsurface": 0.32 - 0.10 * ap["skin_elasticity_loss"],
             "wrinkle": ap["wrinkle"],
