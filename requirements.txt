@@ -8,8 +8,8 @@ requests==2.32.3
 aiohttp==3.10.10
 cryptography==42.0.5
 google-genai>=1.0.0
-mediapipe
+mediapipe==0.10.21
 opencv-python
-numpy
+numpy<2
 firebase-admin>=6.5.0
 gunicorn==23.0.0
