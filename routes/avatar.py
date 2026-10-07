@@ -123,7 +123,7 @@ def render_avatar():
         # =============================================
 
         clave_cache = cache.hacer_clave(
-            "avatar-render-v2", imagen_bytes, altura, edad, estilo
+            "avatar-render-v3-photo-texture", imagen_bytes, altura, edad, estilo
         )
 
         resultado_cacheado = cache.obtener(clave_cache)
