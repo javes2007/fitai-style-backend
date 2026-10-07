@@ -25,6 +25,42 @@ class AnalizadorMedidas:
             enable_segmentation=True,
             min_detection_confidence=0.5
         )
+        self.face_mesh = mp.solutions.face_mesh.FaceMesh(
+            static_image_mode=True,
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5
+        )
+
+    def _extraer_identidad_facial(resultado_rostro):
+        """Extrae proporciones faciales 2D para parametrizar el avatar."""
+        if not resultado_rostro.multi_face_landmarks:
+            return {"detectado": False, "face_width": 0.50, "face_height": 0.50, "eye_spacing": 0.50, "eye_size": 0.50, "nose_length": 0.50, "nose_width": 0.50, "mouth_width": 0.50, "jaw_width": 0.50}
+
+        lm = resultado_rostro.multi_face_landmarks[0].landmark
+
+        def d(a, b):
+            return math.sqrt((lm[a].x - lm[b].x) ** 2 + (lm[a].y - lm[b].y) ** 2)
+
+        face_width = max(d(234, 454), 1e-6)
+        face_height = max(d(10, 152), 1e-6)
+        eye_spacing = d(133, 362) / face_width
+        eye_size = ((d(159, 145) + d(386, 374)) / 2) / face_height
+        nose_length = d(168, 1) / face_height
+        nose_width = d(98, 327) / face_width
+        mouth_width = d(61, 291) / face_width
+
+        return {
+            "detectado": True,
+            "face_width": 0.50,
+            "face_height": max(0.0, min(1.0, face_height / 0.55)),
+            "eye_spacing": max(0.0, min(1.0, eye_spacing / 0.45)),
+            "eye_size": max(0.0, min(1.0, eye_size / 0.20)),
+            "nose_length": max(0.0, min(1.0, nose_length / 0.45)),
+            "nose_width": max(0.0, min(1.0, nose_width / 0.30)),
+            "mouth_width": max(0.0, min(1.0, mouth_width / 0.55)),
+            "jaw_width": max(0.0, min(1.0, face_width / 0.50)),
+        }
 
     @staticmethod
     def distancia(p1, p2):
@@ -55,6 +91,8 @@ class AnalizadorMedidas:
         )
 
         resultado = self.pose.process(imagen_rgb)
+        resultado_rostro = self.face_mesh.process(imagen_rgb)
+        identidad_facial = self._extraer_identidad_facial(resultado_rostro)
 
         if not resultado.pose_landmarks:
             return {
@@ -311,6 +349,7 @@ class AnalizadorMedidas:
 
             "puntos_mapeados": puntos,
 
+            "identidad_facial": identidad_facial,
             "avatar": {
                 "altura": round(
                     float(altura_cm),
