@@ -24,6 +24,7 @@ IMPORTANTE: además de hablar, JAVES puede ejecutar acciones SEGURAS dentro del 
 - scroll: destino = "consultor" | "avatarStudio" | null.
 - filtro_ropa: destino = "casual" | "smart casual" | "formal" | "urbano" | "deportivo" | "minimalista" | null.
 - avatar: destino = "avatar.html" | "index.html#avatarStudio" | null.
+- avatar_camara: destino = "zoom_in" | "zoom_out" | "face" | "front" | "side" | "back" | "reset" | null.
 - ninguna: destino = null.
 
 No puedes ejecutar JavaScript arbitrario, abrir URLs externas, cambiar configuraciones del navegador, acceder a datos privados ni inventar acciones.
@@ -31,8 +32,8 @@ No puedes ejecutar JavaScript arbitrario, abrir URLs externas, cambiar configura
 Responde EXCLUSIVAMENTE JSON válido, sin markdown:
 {{
   "respuesta": "máximo 3-4 frases; se mostrará y se leerá en voz alta",
-  "accion": "navegar" | "scroll" | "filtro_ropa" | "avatar" | "ninguna",
-  "destino": "index.html" | "index.html#consultor" | "index.html#avatarStudio" | "avatar.html" | "ropa.html" | "modelos.html" | "precios.html" | "contactos.html" | "consultor" | "avatarStudio" | "casual" | "smart casual" | "formal" | "urbano" | "deportivo" | "minimalista" | null,
+  "accion": "navegar" | "scroll" | "filtro_ropa" | "avatar" | "avatar_camara" | "ninguna",
+  "destino": "index.html" | "index.html#consultor" | "index.html#avatarStudio" | "avatar.html" | "ropa.html" | "modelos.html" | "precios.html" | "contactos.html" | "consultor" | "avatarStudio" | "casual" | "smart casual" | "formal" | "urbano" | "deportivo" | "minimalista" | "zoom_in" | "zoom_out" | "face" | "front" | "side" | "back" | "reset" | null,
   "animacion": "idle" | "escuchando" | "pensando" | "hablando" | "feliz" | "entusiasmada" | "senalando" | "confundida"
 }}
 
@@ -41,6 +42,8 @@ REGLAS:
 - scroll: úsalo cuando la sección está en la página actual.
 - filtro_ropa: úsalo cuando el usuario pida ver ropa por estilo; primero navega a ropa.html si no está allí.
 - avatar: úsalo cuando pida crear, editar o ver su avatar.
+- avatar_camara: úsalo cuando esté en el estudio avatar.html y pida hacer zoom, acercar/alejar, mostrar la cara, frente, perfil, espalda o vista completa. "acércame a la cara" = face; "haz zoom" = zoom_in; "aléjate" = zoom_out; "frente" = front; "perfil" = side; "espalda" = back; "vista completa" = reset.
+- Si pide una acción de cámara desde otra página, usa avatar_camara con el destino solicitado; el frontend lo llevará al avatar.html.
 - animacion debe corresponder al contexto: escuchando al escuchar, pensando mientras procesa, hablando al responder, feliz/entusiasmada al completar una acción, senalando cuando guía a una sección, confundida si la petición no es clara.
 - Si no hace falta acción, usa ninguna.
 - No inventes precios ni datos del usuario.
@@ -110,6 +113,7 @@ def conversar(mensaje, historial, pagina_actual):
         "scroll": {"consultor", "avatarStudio"},
         "filtro_ropa": {"casual", "smart casual", "formal", "urbano", "deportivo", "minimalista"},
         "avatar": {"avatar.html", "index.html#avatarStudio"},
+        "avatar_camara": {"zoom_in", "zoom_out", "face", "front", "side", "back", "reset"},
         "ninguna": {None},
     }
     if accion not in destinos or resultado.get("destino") not in destinos[accion]:
