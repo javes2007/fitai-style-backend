@@ -22,21 +22,22 @@ class Config:
 
     DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
 
-    # En producción se permite explícitamente el frontend oficial de Vercel.
-    # FRONTEND_ORIGINS puede sobrescribir esta lista con uno o varios orígenes.
-    _cors_env = os.environ.get("FRONTEND_ORIGINS", "")
-    CORS_ORIGINS = (
-        [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
-        if _cors_env.strip()
-        else [
-            "https://fitai-style-frontend.vercel.app",
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:5500",
-            "http://127.0.0.1:5500",
-            "null",
-        ]
-    )
+    # Orígenes oficiales permitidos. Si Render define FRONTEND_ORIGINS,
+    # se agregan a los predeterminados en vez de reemplazarlos.
+    _default_cors_origins = [
+        "https://fitai-style-frontend.vercel.app",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+        "null",
+    ]
+    _cors_env = [
+        origin.strip()
+        for origin in os.environ.get("FRONTEND_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    CORS_ORIGINS = list(dict.fromkeys(_default_cors_origins + _cors_env))
 
 if not os.environ.get("DB_PASSWORD"):
     warnings.warn(
