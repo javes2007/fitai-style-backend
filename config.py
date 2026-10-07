@@ -14,6 +14,12 @@ class Config:
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_UPLOAD_MB", "16")) * 1024 * 1024
 
+    # Modelo humano paramétrico compartido con el frontend V5.
+    AVATAR_MODEL_URL = os.environ.get(
+        "AVATAR_MODEL_URL",
+        "https://cdn.jsdelivr.net/gh/nirholas/three.ws@5c7d87a768152cd64a8cce2feef8831411062eb5/public/avatars/parametric-base.glb",
+    )
+
     DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
 
     # En producción define FRONTEND_ORIGINS como una lista separada por comas.
