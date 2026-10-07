@@ -146,6 +146,7 @@ def build_avatar_dna(
             "mode": "glb-with-procedural-fallback",
             "glb_ready": True,
             "glb_path": "/assets/avatars/human-base.glb",
+            "model_url": None,
             "source": "parametric-human",
             "photo_identical": False,
             "age_progression": "parametric-approximation",
