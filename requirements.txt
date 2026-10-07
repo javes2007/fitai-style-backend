@@ -12,3 +12,4 @@ mediapipe
 opencv-python
 numpy
 firebase-admin>=6.5.0
+gunicorn==23.0.0
