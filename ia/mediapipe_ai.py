@@ -1,5 +1,6 @@
 import math
 from typing import Optional
+import base64
 
 import cv2  # type: ignore
 import mediapipe as mp
@@ -35,7 +36,7 @@ class AnalizadorMedidas:
         )
 
     @staticmethod
-    def _extraer_identidad_facial(resultado_rostro):
+    def _extraer_identidad_facial(resultado_rostro, imagen=None):
         """Extrae proporciones faciales 2D para parametrizar el avatar."""
         if not resultado_rostro.multi_face_landmarks:
             return {"detectado": False, "face_width": 0.50, "face_height": 0.50, "eye_spacing": 0.50, "eye_size": 0.50, "nose_length": 0.50, "nose_width": 0.50, "mouth_width": 0.50, "jaw_width": 0.50}
@@ -53,7 +54,7 @@ class AnalizadorMedidas:
         nose_width = d(98, 327) / face_width
         mouth_width = d(61, 291) / face_width
 
-        return {
+        resultado = {
             "detectado": True,
             "face_width": 0.50,
             "face_height": max(0.0, min(1.0, face_height / 0.55)),
@@ -63,7 +64,56 @@ class AnalizadorMedidas:
             "nose_width": max(0.0, min(1.0, nose_width / 0.30)),
             "mouth_width": max(0.0, min(1.0, mouth_width / 0.55)),
             "jaw_width": max(0.0, min(1.0, face_width / 0.50)),
+            "skin_tone": 0.50,
+            "skin_variation": 0.20,
         }
+
+        if imagen is not None:
+            alto, ancho = imagen.shape[:2]
+            xs = [max(0.0, min(1.0, lm[i].x)) for i in (234, 454, 10, 152)]
+            ys = [max(0.0, min(1.0, lm[i].y)) for i in (234, 454, 10, 152)]
+            x0 = max(0, int(min(xs) * ancho - 0.08 * ancho))
+            x1 = min(ancho, int(max(xs) * ancho + 0.08 * ancho))
+            y0 = max(0, int(min(ys) * alto - 0.10 * alto))
+            y1 = min(alto, int(max(ys) * alto + 0.10 * alto))
+
+            if x1 > x0 and y1 > y0:
+                face_crop = imagen[y0:y1, x0:x1]
+                if face_crop.size:
+                    inner = face_crop[
+                        int(face_crop.shape[0] * 0.18):int(face_crop.shape[0] * 0.82),
+                        int(face_crop.shape[1] * 0.15):int(face_crop.shape[1] * 0.85)
+                    ]
+                    if inner.size:
+                        pixels = inner.reshape(-1, 3)
+                        hsv = cv2.cvtColor(inner, cv2.COLOR_BGR2HSV).reshape(-1, 3)
+                        mask = (
+                            (hsv[:, 1] < 190) &
+                            (hsv[:, 2] > 45) &
+                            (hsv[:, 2] < 245)
+                        )
+                        seleccion = pixels[mask]
+                        if len(seleccion) >= 20:
+                            b, g, r = [int(v) for v in seleccion.mean(axis=0)]
+                            resultado["skin_tone"] = round(
+                                max(0.0, min(1.0, ((r + g + b) / 3 - 45) / 170)),
+                                4
+                            )
+                            resultado["skin_rgb"] = {"r": r, "g": g, "b": b}
+                            resultado["skin_hex"] = "#{:02x}{:02x}{:02x}".format(r, g, b)
+
+                    ok, encoded = cv2.imencode(
+                        ".jpg",
+                        face_crop,
+                        [int(cv2.IMWRITE_JPEG_QUALITY), 88]
+                    )
+                    if ok:
+                        resultado["face_texture_data_url"] = (
+                            "data:image/jpeg;base64,"
+                            + base64.b64encode(encoded.tobytes()).decode("ascii")
+                        )
+
+        return resultado
 
     @staticmethod
     def distancia(p1, p2):
@@ -120,7 +170,7 @@ class AnalizadorMedidas:
 
         resultado = self.pose.process(imagen_rgb)
         resultado_rostro = self.face_mesh.process(imagen_rgb)
-        identidad_facial = self._extraer_identidad_facial(resultado_rostro)
+        identidad_facial = self._extraer_identidad_facial(resultado_rostro, imagen)
 
         if not resultado.pose_landmarks:
             return {
