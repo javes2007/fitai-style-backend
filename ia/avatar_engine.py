@@ -120,6 +120,7 @@ def build_avatar_dna(
     return {
         "version": "3.0",
         "engine": "fitai-avatar-dna",
+        "edad": age,
         "age": ap,
         "body": {
             "height_cm": max(50.0, min(250.0, float(height_cm))),
@@ -145,5 +146,8 @@ def build_avatar_dna(
             "mode": "glb-with-procedural-fallback",
             "glb_ready": True,
             "glb_path": "/assets/avatars/human-base.glb",
+            "source": "parametric-human",
+            "photo_identical": False,
+            "age_progression": "parametric-approximation",
         },
     }
