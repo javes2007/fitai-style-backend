@@ -217,6 +217,7 @@ def render_avatar():
                 "muscle": 0.50,
                 "body_fat": 0.50,
             },
+            face=deteccion.get("identidad_facial", {}),
         )
 
         # =============================================
