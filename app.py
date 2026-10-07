@@ -3,8 +3,21 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import os
 import re
+import sys
+import types
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
+# El repositorio contiene el backend en su propia raíz, pero el código
+# histórico importa los módulos con el prefijo "backend.". Registramos
+# esta raíz como un paquete compatible para que ambos entornos funcionen:
+# desarrollo local y despliegue en Render.
+_backend_root = os.path.dirname(os.path.abspath(__file__))
+if "backend" not in sys.modules:
+    _backend_package = types.ModuleType("backend")
+    _backend_package.__path__ = [_backend_root]
+    _backend_package.__package__ = "backend"
+    sys.modules["backend"] = _backend_package
 
 from backend.config import Config
 from backend.database.conexion import obtener_conexion
@@ -106,7 +119,7 @@ def procesar_contacto():
             "status": "success",
             "mensaje": "Mensaje recibido correctamente."
         }), 201
-    except Exception as exc:
+    except Exception:
         conn.rollback()
         app.logger.exception("Error guardando contacto")
         return jsonify({"error": "No se pudo guardar el mensaje."}), 500
