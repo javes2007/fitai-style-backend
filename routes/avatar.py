@@ -220,6 +220,9 @@ def render_avatar():
             face=deteccion.get("identidad_facial", {}),
         )
 
+        # El frontend y backend deben consumir exactamente el mismo modelo base.
+        avatar_dna["render"]["model_url"] = Config.AVATAR_MODEL_URL
+
         # =============================================
         # RESPUESTA
         # =============================================
