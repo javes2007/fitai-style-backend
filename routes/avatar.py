@@ -88,12 +88,12 @@ def render_avatar():
             "altura",
             170,
             type=float
+        )
 
         edad = request.form.get(
             "edad",
             25,
             type=float
-        )
         )
 
         if altura < 100 or altura > 250:
