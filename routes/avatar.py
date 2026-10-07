@@ -6,6 +6,7 @@ import numpy as np
 
 from backend.config import Config
 from backend.ia.mediapipe_ai import analizar_medidas
+from backend.ia.avatar_engine import build_avatar_dna
 from backend.ia.recomendador import generar_recomendacion
 from backend.utils import cache
 
@@ -87,6 +88,12 @@ def render_avatar():
             "altura",
             170,
             type=float
+
+        edad = request.form.get(
+            "edad",
+            25,
+            type=float
+        )
         )
 
         if altura < 100 or altura > 250:
@@ -94,6 +101,12 @@ def render_avatar():
             return jsonify({
                 "status": "error",
                 "error": "La altura debe estar entre 100 y 250 cm."
+            }), 400
+
+        if edad < 0 or edad > 100:
+            return jsonify({
+                "status": "error",
+                "error": "La edad debe estar entre 0 y 100 años."
             }), 400
 
         # =============================================
@@ -110,7 +123,7 @@ def render_avatar():
         # =============================================
 
         clave_cache = cache.hacer_clave(
-            "avatar-render", imagen_bytes, altura, estilo
+            "avatar-render-v2", imagen_bytes, altura, edad, estilo
         )
 
         resultado_cacheado = cache.obtener(clave_cache)
@@ -186,6 +199,27 @@ def render_avatar():
         )
 
         # =============================================
+        # AVATAR DNA
+        # =============================================
+        proporciones = deteccion.get("proporciones", {})
+        avatar_medidas = deteccion.get("avatar", {})
+        hombros_ref = max(float(proporciones.get("hombros", 0.5)), 0.001)
+        cadera_ref = max(float(proporciones.get("cadera", 0.5)), 0.001)
+        torso_ref = max(float(avatar_medidas.get("escala_torso", 0.5)), 0.001)
+
+        avatar_dna = build_avatar_dna(
+            age=edad,
+            height_cm=altura,
+            body={
+                "shoulder": max(0.0, min(1.0, hombros_ref / 0.34)),
+                "waist": max(0.0, min(1.0, cadera_ref / 0.30)),
+                "body_ratio": max(0.0, min(1.0, torso_ref / 0.18)),
+                "muscle": 0.50,
+                "body_fat": 0.50,
+            },
+        )
+
+        # =============================================
         # RESPUESTA
         # =============================================
 
@@ -223,6 +257,8 @@ def render_avatar():
                 "proporciones",
                 {}
             ),
+
+            "avatar_dna": avatar_dna,
 
             "avatar": deteccion.get(
                 "avatar",
