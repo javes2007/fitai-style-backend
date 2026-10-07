@@ -41,7 +41,18 @@ cors_origins = Config.CORS_ORIGINS or [
     "http://127.0.0.1:5500",
     "null",  # abrir HTML con file:// (solo desarrollo)
 ]
-CORS(app, resources={r"/api/*": {"origins": cors_origins}})
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": cors_origins,
+            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "expose_headers": ["Content-Type"],
+            "max_age": 600,
+        }
+    }
+)
 
 app.register_blueprint(usuarios_bp, url_prefix="/api")
 app.register_blueprint(firebase_auth_bp, url_prefix="/api")
