@@ -37,6 +37,88 @@ def allowed_file(filename):
     )
 
 
+def _asegurar_perfil_avatar(c):
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS avatar_perfiles (
+            id_avatar INT AUTO_INCREMENT PRIMARY KEY,
+            id_usuario INT NOT NULL UNIQUE,
+            edad INT NULL,
+            estilo VARCHAR(50) NULL,
+            cuerpo JSON NULL,
+            rostro JSON NULL,
+            cabello JSON NULL,
+            estetica JSON NULL,
+            foto_analizada BOOLEAN NOT NULL DEFAULT FALSE,
+            avatar_dna JSON NULL,
+            fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
+@avatar_bp.route("/avatar/perfil", methods=["GET"])
+@requiere_autenticacion
+def obtener_perfil_avatar():
+    conn = obtener_conexion()
+    if not conn:
+        return jsonify({"error": "Base de datos no disponible."}), 503
+    try:
+        with conn.cursor() as c:
+            _asegurar_perfil_avatar(c)
+            c.execute("""SELECT id_usuario,edad,estilo,cuerpo,rostro,cabello,estetica,
+                         foto_analizada,avatar_dna,fecha_actualizacion
+                         FROM avatar_perfiles WHERE id_usuario=%s""", (g.id_usuario,))
+            perfil = c.fetchone()
+            if not perfil:
+                return jsonify({"usuario_id":g.id_usuario,"perfil":None}),200
+            return jsonify({"usuario_id":g.id_usuario,"perfil":perfil}),200
+    finally:
+        conn.close()
+
+@avatar_bp.route("/avatar/perfil", methods=["PUT"])
+@requiere_autenticacion
+def guardar_perfil_avatar():
+    data = request.get_json(silent=True) or {}
+    permitido = ("edad","estilo","cuerpo","rostro","cabello","estetica","foto_analizada","avatar_dna")
+    cambios = {k:data[k] for k in permitido if k in data}
+
+    if "edad" in cambios:
+        try:
+            cambios["edad"] = int(cambios["edad"])
+        except (TypeError,ValueError):
+            return jsonify({"error":"La edad debe ser numérica."}),400
+        if not 0 <= cambios["edad"] <= 100:
+            return jsonify({"error":"La edad debe estar entre 0 y 100 años."}),400
+    if "estilo" in cambios:
+        cambios["estilo"] = str(cambios["estilo"]).strip()[:50]
+    if "foto_analizada" in cambios:
+        cambios["foto_analizada"] = bool(cambios["foto_analizada"])
+
+    conn=obtener_conexion()
+    if not conn:return jsonify({"error":"Base de datos no disponible."}),503
+    try:
+        with conn.cursor() as c:
+            _asegurar_perfil_avatar(c)
+            c.execute("SELECT id_avatar FROM avatar_perfiles WHERE id_usuario=%s",(g.id_usuario,))
+            existe=c.fetchone()
+            if existe:
+                if not cambios:return jsonify({"success":True,"mensaje":"No había cambios que guardar."}),200
+                sets=[]; vals=[]
+                for key,value in cambios.items():
+                    sets.append(key+"=%s")
+                    vals.append(json.dumps(value,ensure_ascii=False) if isinstance(value,(dict,list)) else value)
+                vals.append(g.id_usuario)
+                c.execute("UPDATE avatar_perfiles SET "+",".join(sets)+" WHERE id_usuario=%s",vals)
+            else:
+                columnas=["id_usuario"]+list(cambios.keys())
+                valores=[g.id_usuario]+[json.dumps(v,ensure_ascii=False) if isinstance(v,(dict,list)) else v for v in cambios.values()]
+                c.execute("INSERT INTO avatar_perfiles ("+",".join(columnas)+") VALUES ("+(",".join(["%s"]*len(columnas))+")"),valores)
+        conn.commit()
+        return jsonify({"success":True,"mensaje":"Perfil del avatar guardado correctamente."}),200
+    except Exception:
+        conn.rollback()
+        return jsonify({"error":"No se pudo guardar el perfil del avatar."}),500
+    finally:
+        conn.close()
+
 @avatar_bp.route(
     "/avatar/render",
     methods=["POST"]
