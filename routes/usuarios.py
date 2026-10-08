@@ -31,6 +31,19 @@ def login():
     response, status_code = procesar_login(email, contrasena)
     return jsonify(response), status_code
 
+@usuarios_bp.route("/usuarios/me", methods=["GET"])
+@requiere_autenticacion
+def mi_perfil():
+    """Perfil y medidas del usuario autenticado para sincronizar el frontend."""
+    usuario = Usuario.obtener_por_id(g.id_usuario)
+    if not usuario:
+        return jsonify({"error": "Usuario no encontrado."}), 404
+
+    campos = ("id_usuario", "nombre", "email", "altura", "ancho_hombros", "pecho", "cintura", "cadera")
+    perfil = {campo: usuario.get(campo) for campo in campos if campo in usuario}
+    perfil["autenticado"] = True
+    return jsonify({"usuario": perfil}), 200
+
 @usuarios_bp.route("/usuarios/<int:id_usuario>/medidas", methods=["PUT"])
 @requiere_autenticacion
 def actualizar_medidas(id_usuario):
