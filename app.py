@@ -29,6 +29,7 @@ from backend.routes.outfits import outfits_bp
 from backend.routes.ia import ia_bp
 from backend.routes.asistente import asistente_bp
 from backend.routes.externos import externos_bp
+from backend.routes.compras import compras_bp
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -62,6 +63,7 @@ app.register_blueprint(outfits_bp, url_prefix="/api")
 app.register_blueprint(ia_bp, url_prefix="/api")
 app.register_blueprint(asistente_bp, url_prefix="/api")
 app.register_blueprint(externos_bp, url_prefix="/api")
+app.register_blueprint(compras_bp, url_prefix="/api")
 
 
 @app.route("/")
