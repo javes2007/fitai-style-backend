@@ -1,4 +1,6 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
+from backend.auth.tokens import requiere_autenticacion
+from backend.database.conexion import obtener_conexion
 import os
 import uuid
 import cv2
