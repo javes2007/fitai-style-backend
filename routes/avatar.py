@@ -3,6 +3,7 @@ from backend.auth.tokens import requiere_autenticacion
 from backend.database.conexion import obtener_conexion
 import os
 import uuid
+import json
 import cv2
 import numpy as np
 
