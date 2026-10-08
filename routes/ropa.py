@@ -117,6 +117,40 @@ def mis_prendas():
     finally:
         conn.close()
 
+@ropa_bp.route("/vestuario", methods=["GET"])
+@requiere_autenticacion
+def vestuario():
+    """Devuelve en una sola respuesta el armario del usuario y el catálogo."""
+    categoria = request.args.get("categoria")
+    estilo = request.args.get("estilo")
+
+    conn = obtener_conexion()
+    if not conn:
+        return jsonify({"error": "Base de datos no disponible."}), 503
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""SELECT id_prenda,nombre_prenda,categoria,color,talla,estilo,temporada,url_imagen,precio
+                              FROM prendas WHERE id_usuario=%s ORDER BY fecha_subida DESC, id_prenda DESC""",
+                           (g.id_usuario,))
+            propias = [_row(r, True) for r in cursor.fetchall()]
+
+        propias = [r for r in propias if (not categoria or _es_categoria(r, categoria))]
+        if estilo:
+            propias = [r for r in propias if str(r.get("estilo") or "").lower() == estilo.strip().lower()]
+
+        catalogo = _obtener_catalogo(categoria, estilo, 200)
+        return jsonify({
+            "usuario_id": g.id_usuario,
+            "mi_armario": propias,
+            "catalogo": catalogo,
+            "total_armario": len(propias),
+            "total_catalogo": len(catalogo)
+        }), 200
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+    finally:
+        conn.close()
+
 @ropa_bp.route("/ropa", methods=["POST"])
 @requiere_autenticacion
 def crear_prenda():
