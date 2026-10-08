@@ -9,7 +9,7 @@ aiohttp==3.10.10
 cryptography==42.0.5
 google-genai>=1.0.0
 mediapipe==0.10.21
-opencv-python
+opencv-python-headless==4.10.0.84
 numpy<2
 firebase-admin>=6.5.0
 gunicorn==23.0.0
