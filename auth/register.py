@@ -210,5 +210,6 @@ def procesar_registro(nombre, email, contrasena):
             "id_usuario": id_usuario,
             "nombre": nombre,
             "email": email
-        }
+        },
+        "token": generar_token(id_usuario)
     }, 201
