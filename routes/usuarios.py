@@ -65,7 +65,18 @@ def actualizar_medidas(id_usuario):
     
     if None in (altura, ancho_hombros, pecho, cintura, cadera):
         return jsonify({"error": "Todas las medidas corporales son obligatorias."}), 400
-        
+
+    try:
+        medidas = [float(valor) for valor in (altura, ancho_hombros, pecho, cintura, cadera)]
+    except (TypeError, ValueError):
+        return jsonify({"error": "Las medidas deben ser valores numéricos."}), 400
+
+    altura, ancho_hombros, pecho, cintura, cadera = medidas
+    if not (100 <= altura <= 250):
+        return jsonify({"error": "La altura debe estar entre 100 y 250 cm."}), 400
+    if not all(20 <= valor <= 250 for valor in (ancho_hombros, pecho, cintura, cadera)):
+        return jsonify({"error": "Las medidas corporales están fuera de un rango válido."}), 400
+
     exito = Usuario.actualizar_medidas(id_usuario, altura, ancho_hombros, pecho, cintura, cadera)
     if exito:
         return jsonify({"mensaje": "Medidas de avatar actualizadas correctamente en la base de datos."}), 200
