@@ -24,6 +24,21 @@ CATEGORIAS = {
     "accesorio": "accesorio", "accesorios": "accesorio",
 }
 
+def _asegurar_catalogo(cursor):
+    """Si la tabla existe pero está vacía, crea el catálogo inicial una sola vez."""
+    cursor.execute("SELECT COUNT(*) AS total FROM prendas WHERE id_usuario IS NULL")
+    total = int((cursor.fetchone() or {}).get("total", 0))
+    if total:
+        return
+
+    cursor.executemany(
+        """INSERT INTO prendas
+           (id_usuario,nombre_prenda,categoria,color,talla,estilo,temporada,url_imagen,precio)
+           VALUES (NULL,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        CATALOGO_INICIAL
+    )
+
+
 def _categoria_normalizada(valor):
     texto = str(valor or "").strip().lower()
     return CATEGORIAS.get(texto, texto)
@@ -68,6 +83,8 @@ def _obtener_catalogo(categoria=None, estilo=None, limite=100):
         raise RuntimeError("Base de datos no disponible.")
     try:
         with conn.cursor() as cursor:
+            _asegurar_catalogo(cursor)
+            conn.commit()
             cursor.execute("""SELECT id_prenda,nombre_prenda,categoria,color,talla,estilo,temporada,url_imagen,precio
                               FROM prendas WHERE id_usuario IS NULL ORDER BY id_prenda""")
             filas = cursor.fetchall()
