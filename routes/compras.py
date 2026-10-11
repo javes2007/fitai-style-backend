@@ -89,33 +89,11 @@ def quitar(id_prenda):
 @compras_bp.route("/compras", methods=["POST"])
 @requiere_autenticacion
 def comprar():
-    conn=obtener_conexion()
-    if not conn:return jsonify({"error":"Base de datos no disponible."}),503
-    try:
-        with conn.cursor() as c:
-            _asegurar_tablas(c)
-            c.execute("""SELECT p.* ,ca.cantidad FROM carrito ca JOIN prendas p ON p.id_prenda=ca.id_prenda
-                         WHERE ca.id_usuario=%s AND p.id_usuario IS NULL FOR UPDATE""",(g.id_usuario,))
-            items=c.fetchall()
-            if not items:return jsonify({"error":"Tu carrito está vacío."}),400
-            total=sum(float(x["precio"] or 0)*int(x["cantidad"]) for x in items)
-            c.execute("INSERT INTO pedidos(id_usuario,total,estado) VALUES(%s,%s,'pendiente')",(g.id_usuario,total))
-            oid=c.lastrowid
-            for x in items:
-                c.execute("""INSERT INTO pedido_detalles(id_pedido,id_prenda_catalogo,nombre_prenda,precio,cantidad)
-                             VALUES(%s,%s,%s,%s,%s)""",(oid,x["id_prenda"],x["nombre_prenda"],x["precio"],x["cantidad"]))
-                for _ in range(int(x["cantidad"])):
-                    c.execute("""INSERT INTO prendas(id_usuario,nombre_prenda,categoria,color,talla,estilo,temporada,url_imagen,precio)
-                                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                              (g.id_usuario,x["nombre_prenda"],x["categoria"],x["color"],x["talla"],x["estilo"],
-                               x["temporada"],x["url_imagen"],x["precio"]))
-            c.execute("DELETE FROM carrito WHERE id_usuario=%s",(g.id_usuario,))
-        conn.commit()
-        return jsonify({"success":True,"id_pedido":oid,"estado":"pendiente","total":round(total,2),
-                        "mensaje":"Compra registrada y prendas añadidas a tu armario."}),201
-    except Exception:
-        conn.rollback(); return jsonify({"error":"No se pudo finalizar la compra."}),500
-    finally: conn.close()
+    """Evita registrar como compra una operación que no pasó por una pasarela."""
+    return jsonify({
+        "error": "Para comprar, inicia el checkout con POST /api/pagos/checkout e indica proveedor: mercadopago o wompi.",
+        "checkout_endpoint": "/api/pagos/checkout"
+    }), 409
 
 @compras_bp.route("/compras", methods=["GET"])
 @requiere_autenticacion
