@@ -3,6 +3,7 @@ from backend.ia.consultor_imagen import consultar_imagen
 from backend.ia.mediapipe_ai import analizar_medidas
 from backend.utils import cache
 
+import logging
 import os
 import uuid
 import cv2
@@ -116,8 +117,7 @@ def consultor_imagen():
 
     except Exception as exc:
         texto_error = str(exc).upper()
-        app_logger = __import__("logging").getLogger(__name__)
-        app_logger.exception("Falló el análisis de colorimetría")
+        logging.getLogger(__name__).exception("Falló el análisis de colorimetría")
 
         if any(codigo in texto_error for codigo in ("RESOURCE_EXHAUSTED", "429")):
             return jsonify({
