@@ -182,6 +182,7 @@ def iniciar_checkout():
     conn = obtener_conexion()
     if not conn:
         return jsonify({"error": "Base de datos no disponible."}), 503
+    pedido_id = None
 
     try:
         with conn.cursor() as c:
@@ -197,6 +198,8 @@ def iniciar_checkout():
             if any(not x.get("precio") or float(x["precio"]) <= 0 for x in items):
                 return jsonify({"error": "Hay prendas con precio inválido en el carrito."}), 409
             total = round(sum(float(x["precio"]) * int(x["cantidad"]) for x in items), 2)
+            if total < float(os.environ.get("FITAI_MIN_CHECKOUT_COP", "1000")):
+                return jsonify({"error": "Los precios del catálogo deben estar expresados en pesos colombianos completos (COP). Revisa el precio de las prendas antes de activar el cobro."}), 409
             if total <= 0 or total > MAX_TOTAL_COP:
                 return jsonify({"error": "El total del pedido está fuera del límite permitido."}), 400
             monto_centavos = int(round(total * 100))
@@ -231,20 +234,38 @@ def iniciar_checkout():
             "moneda": "COP", "checkout_url": checkout_url,
         }), 201
     except RuntimeError as exc:
-        try:
-            conn.rollback()
-            with conn.cursor() as c:
-                c.execute("UPDATE pago_intentos SET estado='error' WHERE id_pedido=LAST_INSERT_ID()")
-            conn.commit()
-        except Exception:
-            conn.rollback()
+        conn.rollback()
+        if pedido_id:
+            try:
+                with conn.cursor() as c:
+                    c.execute("UPDATE pago_intentos SET estado='error' WHERE id_pedido=%s AND estado='creando'", (pedido_id,))
+                    c.execute("UPDATE pedidos SET estado='error_pago' WHERE id_pedido=%s AND estado='pendiente_pago'", (pedido_id,))
+                conn.commit()
+            except Exception:
+                conn.rollback()
         return jsonify({"error": str(exc)}), 503
     except requests.RequestException:
         conn.rollback()
+        if pedido_id:
+            try:
+                with conn.cursor() as c:
+                    c.execute("UPDATE pago_intentos SET estado='error' WHERE id_pedido=%s AND estado='creando'", (pedido_id,))
+                    c.execute("UPDATE pedidos SET estado='error_pago' WHERE id_pedido=%s AND estado='pendiente_pago'", (pedido_id,))
+                conn.commit()
+            except Exception:
+                conn.rollback()
         logger.exception("Error de red creando checkout")
         return jsonify({"error": "La pasarela no respondió. El pedido no se ha marcado como pagado; vuelve a intentarlo."}), 502
     except Exception:
         conn.rollback()
+        if pedido_id:
+            try:
+                with conn.cursor() as c:
+                    c.execute("UPDATE pago_intentos SET estado='error' WHERE id_pedido=%s AND estado='creando'", (pedido_id,))
+                    c.execute("UPDATE pedidos SET estado='error_pago' WHERE id_pedido=%s AND estado='pendiente_pago'", (pedido_id,))
+                conn.commit()
+            except Exception:
+                conn.rollback()
         logger.exception("No se pudo iniciar el checkout")
         return jsonify({"error": "No se pudo iniciar el pago. Revisa el carrito e inténtalo de nuevo."}), 500
     finally:
