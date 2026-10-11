@@ -66,7 +66,7 @@ Devuelve JSON con las claves y estructura solicitadas. Los colores deben incluir
                     ],
                     config=types.GenerateContentConfig(
                         temperature=0.55,
-                        max_output_tokens=1200,
+                        max_output_tokens=1800,
                     ),
                 )
                 return _parse_json(response.text or "No se recibió respuesta."), None
