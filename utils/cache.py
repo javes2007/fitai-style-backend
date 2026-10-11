@@ -1,63 +1,77 @@
+"""Caché TTL acotada para resultados costosos de IA y visión por computador.
+
+La caché vive en memoria del proceso y se pierde al reiniciar. Tiene un límite
+de entradas para impedir crecimiento ilimitado bajo tráfico variado.
 """
-Caché simple en memoria con tiempo de vida (TTL).
-
-Pensada para evitar llamadas repetidas y costosas (Gemini, MediaPipe)
-cuando llega exactamente la misma imagen con los mismos parámetros.
-
-Limitaciones honestas:
-- Vive solo en memoria del proceso: se pierde al reiniciar el servidor.
-- Si el servidor corre con varios procesos/workers (p. ej. gunicorn con
-  -w 4), cada proceso tiene su propia caché independiente.
-Para un proyecto de este tamaño es suficiente y no añade dependencias
-nuevas (usa solo la librería estándar de Python).
-"""
-
-import time
+from collections import OrderedDict
 import hashlib
 import threading
+import time
 
-_cache = {}
-_lock = threading.Lock()
+_MAX_ENTRADAS = 256
+_cache = OrderedDict()
+_lock = threading.RLock()
 
 
 def hacer_clave(*partes):
-    """Genera una clave estable a partir de strings y/o bytes (p. ej. la imagen)."""
+    """Crea una clave SHA-256 estable para texto, parámetros o bytes."""
     h = hashlib.sha256()
     for parte in partes:
-        if isinstance(parte, (bytes, bytearray)):
-            h.update(parte)
+        if isinstance(parte, (bytes, bytearray, memoryview)):
+            h.update(bytes(parte))
         else:
             h.update(str(parte).encode("utf-8", errors="ignore"))
         h.update(b"|")
     return h.hexdigest()
 
 
+def _limpiar_expiradas(ahora):
+    expiradas = [clave for clave, (_, expira_en) in _cache.items() if expira_en <= ahora]
+    for clave in expiradas:
+        _cache.pop(clave, None)
+
+
 def obtener(clave):
-    """Devuelve el valor cacheado si existe y no ha expirado, si no None."""
+    """Devuelve un resultado vigente o None si no existe/expiró."""
+    ahora = time.monotonic()
     with _lock:
         entrada = _cache.get(clave)
-        if not entrada:
+        if entrada is None:
             return None
         valor, expira_en = entrada
-        if time.time() > expira_en:
-            del _cache[clave]
+        if expira_en <= ahora:
+            _cache.pop(clave, None)
             return None
+        _cache.move_to_end(clave)
         return valor
 
 
 def guardar(clave, valor, ttl_segundos=600):
-    """Guarda un valor en caché durante ttl_segundos (10 min por defecto)."""
+    """Guarda un resultado con TTL y elimina entradas antiguas si hace falta."""
+    try:
+        ttl = max(0, float(ttl_segundos))
+    except (TypeError, ValueError):
+        ttl = 600
+    if ttl == 0:
+        return
+    ahora = time.monotonic()
     with _lock:
-        _cache[clave] = (valor, time.time() + ttl_segundos)
+        _limpiar_expiradas(ahora)
+        _cache[clave] = (valor, ahora + ttl)
+        _cache.move_to_end(clave)
+        while len(_cache) > _MAX_ENTRADAS:
+            _cache.popitem(last=False)
 
 
 def limpiar():
-    """Vacía toda la caché (útil para pruebas)."""
+    """Vacía la caché (útil en pruebas y mantenimiento)."""
     with _lock:
         _cache.clear()
 
 
 def estado():
-    """Información básica de la caché, útil para /status."""
+    """Devuelve métricas básicas sin exponer claves ni contenido cacheado."""
+    ahora = time.monotonic()
     with _lock:
-        return {"entradas": len(_cache)}
+        _limpiar_expiradas(ahora)
+        return {"entradas": len(_cache), "max_entradas": _MAX_ENTRADAS}
