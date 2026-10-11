@@ -114,7 +114,10 @@ def status():
         "services": {
             "gemini": bool(os.environ.get("GEMINI_API_KEY")),
             "google_search": bool(os.environ.get("GOOGLE_API_KEY") and os.environ.get("GOOGLE_CSE_ID")),
-            "weather": bool(os.environ.get("OPENWEATHER_API_KEY")),\n            "mercadopago": bool(os.environ.get("MERCADOPAGO_ACCESS_TOKEN")),\n            "wompi": bool(os.environ.get("WOMPI_PUBLIC_KEY") and os.environ.get("WOMPI_INTEGRITY_SECRET") and os.environ.get("WOMPI_PRIVATE_KEY"))\n        }
+            "weather": bool(os.environ.get("OPENWEATHER_API_KEY")),
+            "mercadopago": bool(os.environ.get("MERCADOPAGO_ACCESS_TOKEN")),
+            "wompi": bool(os.environ.get("WOMPI_PUBLIC_KEY") and os.environ.get("WOMPI_INTEGRITY_SECRET") and os.environ.get("WOMPI_PRIVATE_KEY"))
+        }
     }), 200
 
 
