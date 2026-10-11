@@ -3,6 +3,6 @@ services:
     name: fitai-style-backend
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    healthCheckPath: /status
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 70 --graceful-timeout 15 --max-requests 500 --max-requests-jitter 50 --access-logfile - --error-logfile -
+    healthCheckPath: /health
     autoDeploy: true
