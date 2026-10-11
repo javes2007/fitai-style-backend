@@ -187,7 +187,7 @@ def conversar(mensaje, historial, pagina_actual):
     ))
 
     ultimo_error = None
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=25000))
 
     for model in FALLBACK_MODELS:
         try:
@@ -238,7 +238,7 @@ Responde exclusivamente JSON válido con estas claves:
 {{"resumen":"2-4 frases útiles","fortalezas":["..."],"mejoras":["..."],"combinacion_sugerida":"...","prendas_recomendadas":["..."],"nivel_confianza":70}}
 nivel_confianza debe ser entero de 0 a 100 y reflejar solo la claridad de la imagen.
 """
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=25000))
     ultimo_error = None
     for model in FALLBACK_MODELS:
         try:
