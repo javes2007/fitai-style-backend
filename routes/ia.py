@@ -115,38 +115,27 @@ def consultor_imagen():
         }), 200
 
     except Exception as exc:
+        texto_error = str(exc).upper()
+        app_logger = __import__("logging").getLogger(__name__)
+        app_logger.exception("Falló el análisis de colorimetría")
 
-        print(
-            f"Error en consultor de imagen: {exc}"
-        )
-
-        texto_error = str(exc)
-
-        # Google devuelve 503/"UNAVAILABLE" o 429/"RESOURCE_EXHAUSTED"
-        # cuando el modelo está saturado o se llegó al límite gratis
-        # por minuto — es temporal, no un problema de configuración.
-        if "UNAVAILABLE" in texto_error or "503" in texto_error:
+        if any(codigo in texto_error for codigo in ("RESOURCE_EXHAUSTED", "429")):
             return jsonify({
-                "error": (
-                    "El servicio de IA de Google está saturado en este "
-                    "momento (pasa seguido con la capa gratuita). "
-                    "Espera un minuto y vuelve a intentar."
-                )
-            }), 503
-
-        if "RESOURCE_EXHAUSTED" in texto_error or "429" in texto_error:
-            return jsonify({
-                "error": (
-                    "Se alcanzó el límite de uso gratuito de Gemini por "
-                    "ahora. Espera un poco antes de volver a intentar."
-                )
+                "error": "Se alcanzó temporalmente el límite de solicitudes de Gemini. Espera un momento y vuelve a intentarlo."
             }), 429
 
+        if any(codigo in texto_error for codigo in ("DEADLINE_EXCEEDED", "TIMEOUT", "TIMED OUT", "504")):
+            return jsonify({
+                "error": "El análisis tardó demasiado. Inténtalo otra vez con una foto más ligera o en unos segundos."
+            }), 504
+
+        if any(codigo in texto_error for codigo in ("UNAVAILABLE", "503", "NOT_FOUND", "MODEL NOT FOUND", "INVALID_ARGUMENT")):
+            return jsonify({
+                "error": "El servicio de análisis de IA no está disponible temporalmente. Inténtalo de nuevo en un momento."
+            }), 503
+
         return jsonify({
-            "error": (
-                "La IA no pudo analizar la imagen en este momento. "
-                f"Detalle técnico: {texto_error[:200]}"
-            )
+            "error": "La IA no pudo analizar la imagen en este momento. Inténtalo de nuevo."
         }), 500
 
 
