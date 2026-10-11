@@ -76,18 +76,32 @@ def inicio():
     })
 
 
+@app.route("/health")
+def health():
+    # Health check liviano para Render: confirma que Flask está vivo sin
+    # depender de MySQL ni de servicios externos.
+    return jsonify({"status": "ok", "backend": True}), 200
+
+
 @app.route("/status")
 def status():
-    db_conn = obtener_conexion()
     db_status = False
-    if db_conn:
-        try:
+    db_conn = None
+    try:
+        db_conn = obtener_conexion()
+        if db_conn:
             with db_conn.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 cursor.fetchone()
             db_status = True
-        finally:
-            db_conn.close()
+    except Exception as exc:
+        app.logger.warning("Comprobación de base de datos fallida: %s", type(exc).__name__)
+    finally:
+        if db_conn:
+            try:
+                db_conn.close()
+            except Exception:
+                app.logger.warning("No se pudo devolver la conexión al pool.")
 
     return jsonify({
         "status": "online",
@@ -98,7 +112,15 @@ def status():
             "google_search": bool(os.environ.get("GOOGLE_API_KEY") and os.environ.get("GOOGLE_CSE_ID")),
             "weather": bool(os.environ.get("OPENWEATHER_API_KEY"))
         }
-    })
+    }), 200
+
+
+@app.errorhandler(413)
+def request_too_large(_error):
+    return jsonify({
+        "status": "error",
+        "error": "El archivo o la solicitud supera el tamaño máximo permitido."
+    }), 413
 
 
 @app.route("/api/contacto", methods=["POST"])
