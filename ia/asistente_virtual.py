@@ -114,7 +114,9 @@ def _normalizar_resultado(resultado):
 
     accion = resultado.get("accion")
     destino = resultado.get("destino")
-    if accion not in DESTINOS or destino not in DESTINOS[accion]:
+    if (not isinstance(accion, str) or accion not in DESTINOS
+            or (destino is not None and not isinstance(destino, str))
+            or destino not in DESTINOS.get(accion, set())):
         accion, destino = "ninguna", None
 
     animacion = resultado.get("animacion")
