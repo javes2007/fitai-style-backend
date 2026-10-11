@@ -1,23 +1,24 @@
+import threading
+
 import pymysql
 import pymysql.cursors
 from dbutils.pooled_db import PooledDB
 from backend.config import Config
 
-# Pool de conexiones: se crea una única vez y se reutiliza en cada
-# petición, en vez de abrir/cerrar una conexión TCP nueva a MySQL por
-# cada consulta (mucho más rápido y evita agotar conexiones bajo carga).
 _pool = None
+_pool_lock = threading.Lock()
 
 
 def _crear_pool():
+    """Crea un pool acotado con timeouts para que DB lenta no congele la API."""
     return PooledDB(
         creator=pymysql,
-        maxconnections=10,   # máximo de conexiones abiertas a la vez
-        mincached=1,         # conexiones inactivas mantenidas listas
+        maxconnections=10,
+        mincached=0,
         maxcached=5,
-        blocking=True,       # espera si el pool está lleno, en vez de fallar
-        ping=1,              # verifica la conexión antes de entregarla (evita
-                              # el clásico error "MySQL server has gone away")
+        maxusage=500,
+        blocking=False,
+        ping=1,
         host=Config.DB_HOST,
         user=Config.DB_USER,
         password=Config.DB_PASSWORD,
@@ -26,23 +27,22 @@ def _crear_pool():
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=False,
+        connect_timeout=5,
+        read_timeout=10,
+        write_timeout=10,
     )
 
 
 def obtener_conexion():
-    """Retorna una conexión del pool a la base de datos MySQL.
-
-    El objeto devuelto se comporta igual que una conexión normal de
-    PyMySQL (cursor(), commit(), close()...), pero al llamar a close()
-    la conexión vuelve al pool para ser reutilizada en vez de cerrarse
-    de verdad. Los cursores devuelven cada fila como diccionario
-    (ej. usuario["email"]).
-    """
+    """Obtiene una conexión reutilizable; devuelve None si no está disponible."""
     global _pool
     try:
         if _pool is None:
-            _pool = _crear_pool()
+            with _pool_lock:
+                if _pool is None:
+                    _pool = _crear_pool()
         return _pool.connection()
-    except Exception as e:
-        print(f"Error al conectar con la base de datos MySQL: {e}")
+    except Exception as exc:
+        # No imprimir credenciales ni parámetros de conexión.
+        print(f"[FitAI DB] No se pudo obtener una conexión ({type(exc).__name__}).")
         return None
