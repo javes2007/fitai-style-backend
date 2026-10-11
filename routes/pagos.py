@@ -195,10 +195,11 @@ def iniciar_checkout():
             items = c.fetchall()
             if not items:
                 return jsonify({"error": "Tu carrito está vacío."}), 400
-            if any(not x.get("precio") or float(x["precio"]) <= 0 for x in items):
-                return jsonify({"error": "Hay prendas con precio inválido en el carrito."}), 409
+            precio_minimo = float(os.environ.get("FITAI_MIN_CHECKOUT_COP", "1000"))
+            if any(not x.get("precio") or float(x["precio"]) < precio_minimo for x in items):
+                return jsonify({"error": "Hay prendas con precio no válido para un cobro en COP. Revisa los precios del catálogo antes de cobrar."}), 409
             total = round(sum(float(x["precio"]) * int(x["cantidad"]) for x in items), 2)
-            if total < float(os.environ.get("FITAI_MIN_CHECKOUT_COP", "1000")):
+            if total < precio_minimo:
                 return jsonify({"error": "Los precios del catálogo deben estar expresados en pesos colombianos completos (COP). Revisa el precio de las prendas antes de activar el cobro."}), 409
             if total <= 0 or total > MAX_TOTAL_COP:
                 return jsonify({"error": "El total del pedido está fuera del límite permitido."}), 400
@@ -354,6 +355,8 @@ def webhook_wompi():
         verified = (response.json() or {}).get("data") or {}
         referencia = str(verified.get("reference") or "")
         monto = int(verified.get("amount_in_cents") or 0)
+        if verified.get("currency") != "COP":
+            return jsonify({"received": True, "verified": False}), 200
         if not referencia or not monto:
             return jsonify({"received": True}), 200
         ok, state = _marcar_pago_y_entregar(
