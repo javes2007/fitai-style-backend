@@ -30,6 +30,8 @@ from backend.routes.ia import ia_bp
 from backend.routes.asistente import asistente_bp
 from backend.routes.externos import externos_bp
 from backend.routes.compras import compras_bp
+from backend.routes.pagos import pagos_bp
+from backend.routes.tienda import tienda_bp
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -64,6 +66,8 @@ app.register_blueprint(ia_bp, url_prefix="/api")
 app.register_blueprint(asistente_bp, url_prefix="/api")
 app.register_blueprint(externos_bp, url_prefix="/api")
 app.register_blueprint(compras_bp, url_prefix="/api")
+app.register_blueprint(pagos_bp, url_prefix="/api")
+app.register_blueprint(tienda_bp, url_prefix="/api")
 
 
 @app.route("/")
@@ -110,8 +114,7 @@ def status():
         "services": {
             "gemini": bool(os.environ.get("GEMINI_API_KEY")),
             "google_search": bool(os.environ.get("GOOGLE_API_KEY") and os.environ.get("GOOGLE_CSE_ID")),
-            "weather": bool(os.environ.get("OPENWEATHER_API_KEY"))
-        }
+            "weather": bool(os.environ.get("OPENWEATHER_API_KEY")),\n            "mercadopago": bool(os.environ.get("MERCADOPAGO_ACCESS_TOKEN")),\n            "wompi": bool(os.environ.get("WOMPI_PUBLIC_KEY") and os.environ.get("WOMPI_INTEGRITY_SECRET"))\n        }
     }), 200
 
 
