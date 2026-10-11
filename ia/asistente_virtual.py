@@ -134,7 +134,7 @@ def _normalizar_resultado(resultado):
 def _es_error_de_modelo_o_temporal(exc):
     texto = str(exc).upper()
     return any(marca in texto for marca in (
-        "NOT_FOUND", "MODEL NOT FOUND", "INVALID_ARGUMENT",
+        "NOT_FOUND", "MODEL NOT FOUND", "INVALID_ARGUMENT", "JSON_INVALID",
         "UNAVAILABLE", "RESOURCE_EXHAUSTED", "DEADLINE_EXCEEDED",
         "TIMEOUT", "TIMED OUT", "503", "504", "429",
     ))
@@ -203,7 +203,7 @@ def conversar(mensaje, historial, pagina_actual):
             )
             resultado = _parse_json(response.text or "")
             if not resultado:
-                raise ValueError("JAVES recibió una respuesta que no contiene JSON válido.")
+                raise ValueError("JSON_INVALID: JAVES recibió una respuesta que no contiene JSON válido.")
             return _normalizar_resultado(resultado), None
         except Exception as exc:
             ultimo_error = exc
