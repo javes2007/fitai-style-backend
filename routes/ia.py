@@ -124,6 +124,11 @@ def consultor_imagen():
                 "error": "Se alcanzó temporalmente el límite de solicitudes de Gemini. Espera un momento y vuelve a intentarlo."
             }), 429
 
+        if "JSON_INVALID" in texto_error:
+            return jsonify({
+                "error": "La IA devolvió una respuesta incompleta. Inténtalo de nuevo en unos segundos."
+            }), 502
+
         if any(codigo in texto_error for codigo in ("DEADLINE_EXCEEDED", "TIMEOUT", "TIMED OUT", "504")):
             return jsonify({
                 "error": "El análisis tardó demasiado. Inténtalo otra vez con una foto más ligera o en unos segundos."
