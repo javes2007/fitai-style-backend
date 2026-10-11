@@ -5,7 +5,8 @@ from google import genai
 from google.genai import types
 
 MODEL = os.environ.get("GEMINI_IMAGE_MODEL", os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
-FALLBACK_MODELS = [MODEL, "gemini-3.6-flash", "gemini-3.5-flash-lite"]
+# Limita los intentos para que una foto no agote el tiempo de espera del servidor.
+FALLBACK_MODELS = list(dict.fromkeys([MODEL, "gemini-3.5-flash-lite"]))
 MAX_RETRIES_PER_MODEL = 0
 
 SYSTEM_PROMPT = """Eres el módulo de colorimetría personal de FitAI Style.
@@ -73,12 +74,17 @@ Devuelve JSON con las claves y estructura solicitadas. Los colores deben incluir
             except Exception as exc:
                 ultimo_error = exc
                 texto_error = str(exc).upper()
-                temporal = any(x in texto_error for x in ("UNAVAILABLE", "RESOURCE_EXHAUSTED", "503", "429"))
+                temporal = any(x in texto_error for x in (
+                    "UNAVAILABLE", "RESOURCE_EXHAUSTED", "DEADLINE_EXCEEDED",
+                    "TIMEOUT", "TIMED OUT", "503", "504", "429"
+                ))
                 if not temporal:
                     raise
                 if intento < MAX_RETRIES_PER_MODEL:
-                    time.sleep(1.2)
-        print(f"[FitAI Gemini] modelo agotado temporalmente: {model}")
+                    time.sleep(0.5)
+                    continue
+                print(f"[FitAI Gemini] modelo {model} falló temporalmente; se probará el siguiente respaldo.")
+                break
 
     if ultimo_error is not None:
         raise ultimo_error
