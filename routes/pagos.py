@@ -74,7 +74,7 @@ def _crear_checkout_mercadopago(referencia, pedido_id, monto, items):
         logger.warning("Mercado Pago no creó checkout: HTTP %s", response.status_code)
         raise RuntimeError("Mercado Pago no pudo crear el checkout. Verifica las credenciales y la cuenta.")
     data = response.json()
-    url = data.get("init_point")
+    url = data.get("sandbox_init_point") if token.startswith("TEST-") else data.get("init_point")
     if not url:
         raise RuntimeError("Mercado Pago no devolvió una URL de pago válida.")
     return url, str(data.get("id") or "")
@@ -316,6 +316,8 @@ def webhook_mercadopago():
         payment = response.json()
         referencia = str(payment.get("external_reference") or "")
         monto = int(round(float(payment.get("transaction_amount") or 0) * 100))
+        if payment.get("currency_id") != "COP":
+            return jsonify({"received": True, "verified": False}), 200
         if not referencia or not monto:
             return jsonify({"received": True}), 200
         ok, state = _marcar_pago_y_entregar(
