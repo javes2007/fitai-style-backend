@@ -6,7 +6,7 @@ from google.genai import types
 
 MODEL = os.environ.get("GEMINI_IMAGE_MODEL", os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"))
 FALLBACK_MODELS = [MODEL, "gemini-3.6-flash", "gemini-3.5-flash-lite"]
-MAX_RETRIES_PER_MODEL = 1
+MAX_RETRIES_PER_MODEL = 0
 
 SYSTEM_PROMPT = """Eres el módulo de colorimetría personal de FitAI Style.
 Tu única tarea en esta solicitud es estimar el tono y subtono VISIBLES de la piel de la persona y recomendar colores que puedan armonizar con ellos.
