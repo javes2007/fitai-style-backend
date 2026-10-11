@@ -124,12 +124,12 @@ class AnalizadorMedidas:
         )
 
     @staticmethod
-    def _preparar_imagen(imagen):
+    def _preparar_imagen(imagen, max_dimension: int = 768):
         """
-        Reduce fotografías grandes antes de MediaPipe para evitar picos de
-        memoria/CPU en Render. Conservamos la relación de aspecto.
+        Reduce imágenes antes de MediaPipe y conserva la relación de aspecto.
+        Pose usa 768 px para ser ligero; el rostro puede usar hasta 1280 px
+        para evitar que la cara quede demasiado pequeña en fotos de cuerpo entero.
         """
-        max_dimension = 768
         alto, ancho = imagen.shape[:2]
         mayor = max(alto, ancho)
 
@@ -154,23 +154,30 @@ class AnalizadorMedidas:
         if not imagen_path:
             raise ValueError("No se proporcionó una imagen.")
 
-        imagen = cv2.imread(imagen_path)
+        imagen_original = cv2.imread(imagen_path)
 
-        if imagen is None:
+        if imagen_original is None:
             raise ValueError(
                 f"No se pudo leer la imagen: {imagen_path}"
             )
 
-        imagen = self._preparar_imagen(imagen)
+        # Separamos las resoluciones: el cuerpo no necesita tantos píxeles,
+        # pero una foto de cuerpo entero puede dejar el rostro minúsculo.
+        imagen_pose = self._preparar_imagen(imagen_original, max_dimension=768)
+        imagen_facial = self._preparar_imagen(imagen_original, max_dimension=1280)
 
-        imagen_rgb = cv2.cvtColor(
-            imagen,
+        imagen_pose_rgb = cv2.cvtColor(
+            imagen_pose,
+            cv2.COLOR_BGR2RGB
+        )
+        imagen_facial_rgb = cv2.cvtColor(
+            imagen_facial,
             cv2.COLOR_BGR2RGB
         )
 
-        resultado = self.pose.process(imagen_rgb)
-        resultado_rostro = self.face_mesh.process(imagen_rgb)
-        identidad_facial = self._extraer_identidad_facial(resultado_rostro, imagen)
+        resultado = self.pose.process(imagen_pose_rgb)
+        resultado_rostro = self.face_mesh.process(imagen_facial_rgb)
+        identidad_facial = self._extraer_identidad_facial(resultado_rostro, imagen_facial)
 
         if not resultado.pose_landmarks:
             return {
