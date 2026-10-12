@@ -269,6 +269,7 @@ def iniciar_checkout():
     if not isinstance(data, dict):
         return jsonify({"error": "El cuerpo debe ser un objeto JSON."}), 400
     proveedor = str(data.get("proveedor", "")).strip().lower()
+    # Validate delivery details before reserving inventory or creating a payment intent.
     envio = data.get("envio") or {}
     if not isinstance(envio, dict):
         return jsonify({"error": "Los datos de envío no tienen formato válido."}), 400
