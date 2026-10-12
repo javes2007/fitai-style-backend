@@ -567,8 +567,8 @@ def verificar_pedido(referencia):
             pedido = cursor.fetchone()
             if not pedido:
                 return _error("No encontramos ese pedido en tu cuenta.", 404)
-            if pedido["estado"] == "pagado":
-                return jsonify({"success": True, "referencia": referencia, "estado": "pagado"}), 200
+            if pedido["estado"] in {"pagado", "rechazado", "cancelado", "error_checkout"}:
+                return jsonify({"success": True, "referencia": referencia, "estado": pedido["estado"]}), 200
             proveedor = pedido["proveedor_pago"]
             total = Decimal(str(pedido["total"]))
             expected_cents = int((total * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
