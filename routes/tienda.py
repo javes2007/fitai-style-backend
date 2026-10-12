@@ -14,7 +14,6 @@ import requests
 from flask import Blueprint, jsonify, request, g
 from backend.auth.tokens import requiere_autenticacion
 from backend.database.conexion import obtener_conexion
-from backend.routes.ropa import _asegurar_catalogo
 
 tienda_bp = Blueprint("tienda", __name__)
 PROVEEDORES_PAGO = {"mercadopago", "wompi"}
@@ -196,6 +195,8 @@ def crear_producto_tienda():
     if not supplied_token or not hmac.compare_digest(supplied_token, admin_token):
         return _error("No autorizado para administrar productos.", 401)
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return _error("El cuerpo debe ser un objeto JSON.", 400)
     nombre = str(data.get("nombre", "")).strip()
     if not nombre or len(nombre) > 180:
         return _error("El nombre del producto es obligatorio (máximo 180 caracteres).", 400)
@@ -244,6 +245,8 @@ def actualizar_producto_tienda(product_id):
     if not supplied_token or not hmac.compare_digest(supplied_token, admin_token):
         return _error("No autorizado para administrar productos.", 401)
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return _error("El cuerpo debe ser un objeto JSON.", 400)
     changes, values = [], []
     if "precio" in data:
         try:
@@ -297,6 +300,8 @@ def crear_checkout():
     proveedor = str(data.get("proveedor_pago", "")).strip().lower()
     items = data.get("items")
     envio = data.get("envio") or {}
+    if not isinstance(envio, dict):
+        return _error("Los datos de envío no tienen un formato válido.", 400)
     if proveedor not in PROVEEDORES_PAGO:
         return _error("Selecciona Mercado Pago o Wompi.", 400)
     if not isinstance(items, list) or not items or len(items) > 30:
