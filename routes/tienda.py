@@ -415,6 +415,42 @@ def crear_checkout():
         conn.close()
 
 
+def _cambiar_estado_pedido(conn, reference, new_state, id_usuario=None):
+    """Actualiza el estado una sola vez y libera inventario si el pago se rechaza/cancela."""
+    with conn.cursor() as cursor:
+        sql = "SELECT id,estado FROM tienda_pedidos WHERE referencia=%s"
+        params = [reference]
+        if id_usuario is not None:
+            sql += " AND id_usuario=%s"
+            params.append(id_usuario)
+        sql += " FOR UPDATE"
+        cursor.execute(sql, params)
+        order = cursor.fetchone()
+        if not order:
+            return False
+        current = str(order["estado"])
+        if current == "pagado":
+            return True
+        final_without_payment = {"rechazado", "cancelado", "error_checkout"}
+        if current in final_without_payment:
+            return True
+        if new_state in {"rechazado", "cancelado", "error_checkout"}:
+            cursor.execute(
+                "SELECT id_producto,cantidad FROM tienda_pedido_detalles WHERE id_pedido=%s",
+                (order["id"],),
+            )
+            for line in cursor.fetchall():
+                cursor.execute(
+                    "UPDATE tienda_productos SET stock=stock+%s WHERE id=%s",
+                    (int(line["cantidad"]), int(line["id_producto"])),
+                )
+        cursor.execute(
+            "UPDATE tienda_pedidos SET estado=%s WHERE id=%s",
+            (new_state, order["id"]),
+        )
+        return True
+
+
 def _marcar_error(reference):
     conn = obtener_conexion()
     if not conn:
@@ -422,10 +458,7 @@ def _marcar_error(reference):
     try:
         with conn.cursor() as cursor:
             _asegurar_tablas(cursor)
-            cursor.execute(
-                "UPDATE tienda_pedidos SET estado='error_checkout' WHERE referencia=%s",
-                (reference,),
-            )
+        _cambiar_estado_pedido(conn, reference, "error_checkout")
         conn.commit()
     except Exception:
         conn.rollback()
@@ -546,12 +579,8 @@ def verificar_pedido(referencia):
             "ERROR": "pendiente_pago",
         }
         new_state = state_map.get(str(verified_status), "pendiente_pago")
-        with conn.cursor() as cursor:
-            cursor.execute(
-                """UPDATE tienda_pedidos SET estado=%s
-                   WHERE referencia=%s AND id_usuario=%s AND estado <> 'pagado'""",
-                (new_state, referencia, g.id_usuario),
-            )
+        if not _cambiar_estado_pedido(conn, referencia, new_state, g.id_usuario):
+            return _error("No encontramos ese pedido en tu cuenta.", 404)
         conn.commit()
         return jsonify({
             "success": True,
