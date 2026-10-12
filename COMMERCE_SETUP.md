@@ -25,6 +25,8 @@ El catálogo inicial contiene precios de demostración. El checkout rechaza esos
 
 Ver productos: GET /api/tienda/catalogo?limite=100
 
+Ver pedidos pagados para preparar el envío: GET /api/tienda/admin/pedidos (header X-Store-Admin-Token). Actualizar estado de envío/transportadora/guía: PATCH /api/tienda/admin/pedidos/ID_PEDIDO.
+
 Crear una prenda de tienda (con precio real en COP y stock inicial):
 
     curl -X POST "https://TU-BACKEND.onrender.com/api/tienda/admin/productos" \
@@ -52,7 +54,7 @@ El precio del ejemplo es solo ilustrativo: cámbialo por el precio real que cobr
 ## 3. Qué se integra
 
 - La tienda propia usa catálogo, precio en COP e inventario gestionados en el backend.
-- El carrito valida disponibilidad y el checkout reserva stock, impide cobros duplicados, guarda snapshots de la prenda y elimina solo las unidades del carrito incluidas en el pedido.
+- El carrito valida disponibilidad y el checkout reserva stock, impide cobros duplicados, guarda snapshots de la prenda y elimina solo las unidades del carrito incluidas en el pedido. El checkout también guarda los datos de entrega; el estado de preparación/envío se administra desde la API protegida.
 - Mercado Pago y Wompi confirman el pago mediante consulta servidor-a-servidor. Un parámetro de retorno del navegador no se toma como prueba de pago.
 - Mercado Libre muestra resultados reales de su búsqueda pública Colombia. Amazon, SHEIN y Temu abren búsquedas externas; para mostrar catálogo/afiliación dentro de FitAI se requiere acceso oficial y autorización de la cuenta. Referencias: Amazon Creators API https://affiliate-program.amazon.com/creatorsapi/docs/en-us/onboarding, afiliados SHEIN https://www.shein.com.co/affiliate-a-427.html, Temu Partner https://partner-us.temu.com/.
 
@@ -64,6 +66,6 @@ El precio del ejemplo es solo ilustrativo: cámbialo por el precio real que cobr
 4. Cambiar el carrito mientras el pago está pendiente: el pago debe retirar solo las unidades de la instantánea, no los artículos añadidos después.
 5. Probar pago aprobado, rechazado, cancelado y notificaciones repetidas.
 6. Simular caída de base de datos durante un webhook y comprobar que la pasarela recibe un error reintentable.
-7. Revisar políticas de privacidad, términos, soporte y el proceso de devolución antes de activar cobros reales.
+7. Revisar políticas de privacidad, términos, soporte y el proceso de devolución antes de activar cobros reales. El sistema guarda datos de entrega y permite seguimiento manual, pero no integra automáticamente una transportadora ni calcula tarifas de envío.
 
 La compilación de sintaxis no reemplaza estas pruebas con credenciales sandbox y una base de datos de pruebas.
