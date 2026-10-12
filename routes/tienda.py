@@ -467,6 +467,7 @@ def crear_checkout():
         }), 201
     except Exception:
         conn.rollback()
+        _marcar_error(reference)
         return _error("No se pudo preparar el pedido. No se ha confirmado ningún cobro.", 500)
     finally:
         conn.close()
