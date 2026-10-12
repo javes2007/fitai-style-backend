@@ -234,6 +234,62 @@ def crear_producto_tienda():
         conn.close()
 
 
+@tienda_bp.route("/tienda/admin/productos/<int:product_id>", methods=["PATCH"])
+def actualizar_producto_tienda(product_id):
+    admin_token = os.environ.get("STORE_ADMIN_TOKEN", "").strip()
+    supplied_token = request.headers.get("X-Store-Admin-Token", "").strip()
+    if not admin_token:
+        return _error("El administrador de la tienda aún no está configurado en el servidor.", 503)
+    import hmac
+    if not supplied_token or not hmac.compare_digest(supplied_token, admin_token):
+        return _error("No autorizado para administrar productos.", 401)
+    data = request.get_json(silent=True) or {}
+    changes, values = [], []
+    if "precio" in data:
+        try:
+            price = _money(data["precio"])
+        except ValueError:
+            return _error("El precio debe ser mayor que cero.", 400)
+        changes.append("precio=%s")
+        values.append(str(price))
+    if "stock" in data:
+        try:
+            stock = int(data["stock"])
+            if stock < 0 or stock > 100000:
+                raise ValueError
+        except (TypeError, ValueError):
+            return _error("El inventario debe estar entre 0 y 100000.", 400)
+        changes.append("stock=%s")
+        values.append(stock)
+    if "activo" in data:
+        if not isinstance(data["activo"], bool):
+            return _error("activo debe ser true o false.", 400)
+        changes.append("activo=%s")
+        values.append(1 if data["activo"] else 0)
+    if not changes:
+        return _error("Envía precio, stock o activo para actualizar.", 400)
+    conn = obtener_conexion()
+    if not conn:
+        return _error("La base de datos no está disponible.", 503)
+    try:
+        with conn.cursor() as cursor:
+            _asegurar_tablas(cursor)
+            cursor.execute(
+                "UPDATE tienda_productos SET " + ", ".join(changes) + " WHERE id=%s",
+                [*values, product_id],
+            )
+            if cursor.rowcount == 0:
+                conn.rollback()
+                return _error("Producto no encontrado o sin cambios.", 404)
+        conn.commit()
+        return jsonify({"success": True, "id_producto": product_id, "mensaje": "Producto actualizado."}), 200
+    except Exception:
+        conn.rollback()
+        return _error("No se pudo actualizar el producto.", 500)
+    finally:
+        conn.close()
+
+
 @tienda_bp.route("/tienda/checkout", methods=["POST"])
 @requiere_autenticacion
 def crear_checkout():
@@ -364,7 +420,8 @@ def crear_checkout():
                 )
                 response.raise_for_status()
                 result = response.json()
-                checkout_url = result.get("init_point")
+                payments_env = os.environ.get("PAYMENTS_ENV", "sandbox").strip().lower()
+                checkout_url = result.get("init_point") if payments_env == "production" else result.get("sandbox_init_point")
                 provider_order_id = str(result.get("id") or "")
                 if not checkout_url or not checkout_url.startswith("https://"):
                     raise ValueError("La pasarela no devolvió un enlace de pago válido.")
@@ -547,7 +604,7 @@ def verificar_pedido(referencia):
                 return _error("La verificación de Wompi no está configurada (falta WOMPI_PRIVATE_KEY).", 503)
             if not transaction_id or len(transaction_id) > 120:
                 return _error("Falta el identificador de la transacción de Wompi para verificar el pago.", 400)
-            api_base = os.environ.get("WOMPI_API_BASE", "https://production.wompi.co/v1").rstrip("/")
+            api_base = os.environ.get("WOMPI_API_BASE", "https://sandbox.wompi.co/v1").rstrip("/")
             try:
                 response = requests.get(
                     api_base + "/transactions/" + requests.utils.quote(transaction_id, safe=""),
