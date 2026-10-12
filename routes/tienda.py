@@ -28,6 +28,23 @@ MARKETPLACES = {
 
 
 def _asegurar_tablas(cursor):
+    cursor.execute("""CREATE TABLE IF NOT EXISTS tienda_productos (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(180) NOT NULL,
+        descripcion VARCHAR(1000) NULL,
+        categoria VARCHAR(80) NULL,
+        color VARCHAR(80) NULL,
+        talla VARCHAR(40) NULL,
+        precio DECIMAL(12,2) NOT NULL,
+        moneda CHAR(3) NOT NULL DEFAULT 'COP',
+        url_imagen VARCHAR(700) NULL,
+        stock INT NOT NULL DEFAULT 0,
+        activo TINYINT(1) NOT NULL DEFAULT 1,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_tienda_producto_activo (activo, stock),
+        INDEX idx_tienda_producto_categoria (categoria)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     cursor.execute("""CREATE TABLE IF NOT EXISTS tienda_pedidos (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         referencia VARCHAR(64) NOT NULL UNIQUE,
@@ -47,7 +64,7 @@ def _asegurar_tablas(cursor):
     cursor.execute("""CREATE TABLE IF NOT EXISTS tienda_pedido_detalles (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
         id_pedido BIGINT NOT NULL,
-        id_prenda INT NOT NULL,
+        id_producto BIGINT NOT NULL,
         nombre VARCHAR(150) NOT NULL,
         precio_unitario DECIMAL(12,2) NOT NULL,
         cantidad INT NOT NULL,
@@ -137,34 +154,22 @@ def productos_tienda():
             return _error("La base de datos no está disponible.", 503)
         try:
             with conn.cursor() as cursor:
-                _asegurar_catalogo(cursor)
+                _asegurar_tablas(cursor)
                 conn.commit()
-                cursor.execute("""SELECT id_prenda, nombre_prenda, categoria, color, talla,
-                                         estilo, url_imagen, precio
-                                  FROM prendas
-                                  WHERE id_usuario IS NULL AND precio > 0
-                                  ORDER BY id_prenda DESC LIMIT %s""", (limit,))
+                cursor.execute("""SELECT id,nombre,descripcion,categoria,color,talla,precio,moneda,url_imagen,stock
+                                  FROM tienda_productos WHERE activo=1 AND stock > 0
+                                  ORDER BY creado_en DESC LIMIT %s""", (limit,))
                 for row in cursor.fetchall():
-                    if query and query.casefold() not in (
-                        str(row.get("nombre_prenda") or "") + " " +
-                        str(row.get("categoria") or "") + " " +
-                        str(row.get("color") or "")
-                    ).casefold():
+                    searchable = " ".join(str(row.get(k) or "") for k in ("nombre", "descripcion", "categoria", "color"))
+                    if query and not any(token.casefold() in searchable.casefold() for token in query.split()):
                         continue
                     productos.append({
-                        "id": int(row["id_prenda"]),
-                        "id_prenda": int(row["id_prenda"]),
-                        "nombre": row["nombre_prenda"],
-                        "categoria": row.get("categoria"),
-                        "color": row.get("color"),
-                        "talla": row.get("talla"),
-                        "estilo": row.get("estilo"),
-                        "precio": float(row["precio"]),
-                        "moneda": "COP",
-                        "url_imagen": row.get("url_imagen"),
-                        "proveedor": "fitai",
-                        "tipo": "propio",
-                        "origen": "FitAI Style",
+                        "id": int(row["id"]), "id_producto": int(row["id"]), "id_prenda": int(row["id"]),
+                        "nombre": row["nombre"], "descripcion": row.get("descripcion"),
+                        "categoria": row.get("categoria"), "color": row.get("color"), "talla": row.get("talla"),
+                        "precio": float(row["precio"]), "moneda": row.get("moneda") or "COP",
+                        "url_imagen": row.get("url_imagen"), "stock": int(row.get("stock") or 0),
+                        "proveedor": "fitai", "tipo": "propio", "origen": "FitAI Style",
                         "comprable_en_fitai": True,
                     })
         except Exception:
@@ -172,15 +177,61 @@ def productos_tienda():
         finally:
             conn.close()
 
-    externos = _buscar_mercado_libre(query, min(limit, 12)) if query and origen in {"todos", "mercadolibre"} else []
+    externos = _buscar_mercado_libre(query or "ropa", min(limit, 12)) if origen in {"todos", "mercadolibre"} else []
     productos.extend(externos)
     return jsonify({
-        "success": True,
-        "productos": productos,
-        "total": len(productos),
+        "success": True, "productos": productos, "total": len(productos),
         "fuentes": {"fitai": origen in {"todos", "propios"}, "mercadolibre": bool(externos)},
         "mensaje": "Los productos externos se compran en el sitio del vendedor."
     }), 200
+
+
+@tienda_bp.route("/tienda/admin/productos", methods=["POST"])
+def crear_producto_tienda():
+    admin_token = os.environ.get("STORE_ADMIN_TOKEN", "").strip()
+    supplied_token = request.headers.get("X-Store-Admin-Token", "").strip()
+    if not admin_token:
+        return _error("El administrador de la tienda aún no está configurado en el servidor.", 503)
+    import hmac
+    if not supplied_token or not hmac.compare_digest(supplied_token, admin_token):
+        return _error("No autorizado para administrar productos.", 401)
+    data = request.get_json(silent=True) or {}
+    nombre = str(data.get("nombre", "")).strip()
+    if not nombre or len(nombre) > 180:
+        return _error("El nombre del producto es obligatorio (máximo 180 caracteres).", 400)
+    try:
+        precio = _money(data.get("precio"))
+        stock = int(data.get("stock", 0))
+        if stock < 0 or stock > 100000:
+            raise ValueError
+    except (ValueError, TypeError):
+        return _error("El precio debe ser mayor que cero y el inventario entre 0 y 100000.", 400)
+    image = str(data.get("url_imagen", "")).strip()[:700] or None
+    if image and not (image.startswith("https://") or image.startswith("img/")):
+        return _error("La imagen debe ser una URL HTTPS o una ruta local dentro de img/.", 400)
+    conn = obtener_conexion()
+    if not conn:
+        return _error("La base de datos no está disponible.", 503)
+    try:
+        with conn.cursor() as cursor:
+            _asegurar_tablas(cursor)
+            cursor.execute("""INSERT INTO tienda_productos
+                (nombre,descripcion,categoria,color,talla,precio,moneda,url_imagen,stock,activo)
+                VALUES (%s,%s,%s,%s,%s,%s,'COP',%s,%s,1)""", (
+                nombre, str(data.get("descripcion", "")).strip()[:1000] or None,
+                str(data.get("categoria", "")).strip()[:80] or None,
+                str(data.get("color", "")).strip()[:80] or None,
+                str(data.get("talla", "")).strip()[:40] or None,
+                str(precio), image, stock,
+            ))
+            product_id = cursor.lastrowid
+        conn.commit()
+        return jsonify({"success": True, "id_producto": product_id, "mensaje": "Producto creado en el catálogo propio."}), 201
+    except Exception:
+        conn.rollback()
+        return _error("No se pudo crear el producto.", 500)
+    finally:
+        conn.close()
 
 
 @tienda_bp.route("/tienda/checkout", methods=["POST"])
@@ -228,11 +279,11 @@ def crear_checkout():
             ids = list(cantidades)
             placeholders = ",".join(["%s"] * len(ids))
             cursor.execute(
-                f"""SELECT id_prenda, nombre_prenda, precio, url_imagen
-                    FROM prendas WHERE id_usuario IS NULL AND id_prenda IN ({placeholders})""",
+                f"""SELECT id, nombre, precio, stock
+                    FROM tienda_productos WHERE activo=1 AND id IN ({placeholders}) FOR UPDATE""",
                 ids,
             )
-            rows = {int(row["id_prenda"]): row for row in cursor.fetchall()}
+            rows = {int(row["id"]): row for row in cursor.fetchall()}
             if len(rows) != len(ids):
                 conn.rollback()
                 return _error("Uno o más productos ya no están disponibles en la tienda propia.", 409)
@@ -240,11 +291,14 @@ def crear_checkout():
             total = Decimal("0.00")
             for product_id, quantity in cantidades.items():
                 row = rows[product_id]
+                if int(row.get("stock") or 0) < quantity:
+                    conn.rollback()
+                    return _error("No hay inventario suficiente para uno de los productos.", 409)
                 price = _money(row.get("precio"))
                 total += price * quantity
                 line_items.append({
                     "id": product_id,
-                    "nombre": str(row["nombre_prenda"])[:150],
+                    "nombre": str(row["nombre"])[:150],
                     "precio": price,
                     "cantidad": quantity,
                 })
@@ -263,10 +317,16 @@ def crear_checkout():
             for line in line_items:
                 cursor.execute(
                     """INSERT INTO tienda_pedido_detalles
-                       (id_pedido,id_prenda,nombre,precio_unitario,cantidad)
+                       (id_pedido,id_producto,nombre,precio_unitario,cantidad)
                        VALUES (%s,%s,%s,%s,%s)""",
                     (order_id, line["id"], line["nombre"], str(line["precio"]), line["cantidad"]),
                 )
+                cursor.execute(
+                    "UPDATE tienda_productos SET stock=stock-%s WHERE id=%s AND activo=1 AND stock >= %s",
+                    (line["cantidad"], line["id"], line["cantidad"]),
+                )
+                if cursor.rowcount != 1:
+                    raise ValueError("Inventario insuficiente.")
         conn.commit()
 
         checkout_url = None
