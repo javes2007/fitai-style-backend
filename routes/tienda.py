@@ -4,6 +4,7 @@ Las credenciales de pago se leen únicamente del entorno del servidor.
 Los productos externos se compran directamente en el marketplace de origen.
 """
 import hashlib
+import json
 import os
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -13,6 +14,7 @@ import requests
 from flask import Blueprint, jsonify, request, g
 from backend.auth.tokens import requiere_autenticacion
 from backend.database.conexion import obtener_conexion
+from backend.routes.ropa import _asegurar_catalogo
 
 tienda_bp = Blueprint("tienda", __name__)
 PROVEEDORES_PAGO = {"mercadopago", "wompi"}
@@ -135,6 +137,8 @@ def productos_tienda():
             return _error("La base de datos no está disponible.", 503)
         try:
             with conn.cursor() as cursor:
+                _asegurar_catalogo(cursor)
+                conn.commit()
                 cursor.execute("""SELECT id_prenda, nombre_prenda, categoria, color, talla,
                                          estilo, url_imagen, precio
                                   FROM prendas
@@ -253,7 +257,7 @@ def crear_checkout():
                 """INSERT INTO tienda_pedidos
                    (referencia,id_usuario,proveedor_pago,estado,total,moneda,datos_envio)
                    VALUES (%s,%s,%s,'preparando_pago',%s,'COP',%s)""",
-                (reference, g.id_usuario, proveedor, str(total), __import__("json").dumps(envio_limpio, ensure_ascii=False)),
+                (reference, g.id_usuario, proveedor, str(total), json.dumps(envio_limpio, ensure_ascii=False)),
             )
             order_id = cursor.lastrowid
             for line in line_items:
