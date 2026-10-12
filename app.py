@@ -113,6 +113,11 @@ def status():
             "gemini": bool(os.environ.get("GEMINI_API_KEY")),
             "google_search": bool(os.environ.get("GOOGLE_API_KEY") and os.environ.get("GOOGLE_CSE_ID")),
             "weather": bool(os.environ.get("OPENWEATHER_API_KEY"))
+        },
+        "commerce": {
+            "mercadopago": bool(os.environ.get("MP_ACCESS_TOKEN")),
+            "wompi": bool(os.environ.get("WOMPI_PUBLIC_KEY") and os.environ.get("WOMPI_INTEGRITY_SECRET") and os.environ.get("WOMPI_PRIVATE_KEY")),
+            "store_admin": bool(os.environ.get("STORE_ADMIN_TOKEN"))
         }
     }), 200
 
