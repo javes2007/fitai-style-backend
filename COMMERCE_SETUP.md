@@ -61,7 +61,7 @@ Los webhooks no confían en el estado enviado por el navegador: el backend consu
 ## Tiendas externas
 
 - Mercado Libre: el backend usa la búsqueda pública de artículos de Mercado Libre Colombia y redirige al permalink del vendedor. La disponibilidad puede cambiar en el sitio de origen.
-- Amazon, SHEIN y Temu: por ahora se muestran enlaces a sus sitios oficiales, no un catálogo inventado. Para mostrar sus productos dentro de FitAI se requiere la herramienta/API o el acceso de afiliado/partner aprobado para la cuenta y región. Temu mantiene un programa de afiliados y una plataforma de partners con APIs sujetas a registro y autorización: https://www.temu.com/co-en/affiliate_recruit.html y https://partner-us.temu.com/.
+- Amazon, SHEIN y Temu: por ahora se muestran enlaces a sus sitios oficiales, no un catálogo inventado. Para mostrar sus productos dentro de FitAI se requiere acceso autorizado a sus herramientas/API o enlaces de afiliado válidos para la cuenta y región. Amazon indica que su Creators API requiere registrarse como Amazon Associate y solicitar acceso: https://affiliate-program.amazon.com/creatorsapi/docs/en-us/onboarding. SHEIN ofrece un programa oficial de afiliados: https://www.shein.com.co/affiliate-a-427.html. Temu ofrece un programa de afiliados y una plataforma de partners con APIs sujetas a registro/autorización: https://www.temu.com/co-en/affiliate_recruit.html y https://partner-us.temu.com/.
 
 ## Endpoints
 
