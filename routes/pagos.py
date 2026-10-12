@@ -455,8 +455,6 @@ def webhook_mercadopago():
         )
         if not ok and state in {"database_unavailable", "fulfillment_failed", "reference_not_found"}:
             return jsonify({"error": "La confirmación no pudo guardarse; se necesita reintento del proveedor."}), 503
-        if not ok and state in {"database_unavailable", "fulfillment_failed", "reference_not_found"}:
-            return jsonify({"error": "La confirmación no pudo guardarse; se necesita reintento del proveedor."}), 503
         if not ok:
             return jsonify({"received": True, "verified": False}), 200
         return jsonify({"received": True, "estado": state}), 200
