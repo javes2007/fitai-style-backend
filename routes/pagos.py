@@ -296,9 +296,6 @@ def iniciar_checkout():
             precio_minimo = float(os.environ.get("FITAI_MIN_CHECKOUT_COP", "1000"))
             if any(not x.get("precio") or float(x["precio"]) < precio_minimo for x in items):
                 return jsonify({"error": "Hay prendas con precio no válido para un cobro en COP. Revisa los precios reales antes de cobrar."}), 409
-            if any(x.get("stock") is None or not bool(x.get("activo")) or int(x.get("stock") or 0) < int(x["cantidad"]) for x in items):
-                return jsonify({"error": "Una o más prendas están agotadas o no disponibles. Actualiza el carrito antes de pagar."}), 409
-
             total = round(sum(float(x["precio"]) * int(x["cantidad"]) for x in items), 2)
             if total < precio_minimo:
                 return jsonify({"error": "El total del pedido no alcanza el mínimo permitido en COP."}), 409
@@ -332,6 +329,9 @@ def iniciar_checkout():
                         "reutilizado": True,
                     }), 200
                 return jsonify({"error": "Ya existe un checkout para este carrito. Continúa con el mismo método de pago para evitar un cobro duplicado."}), 409
+
+            if any(x.get("stock") is None or not bool(x.get("activo")) or int(x.get("stock") or 0) < int(x["cantidad"]) for x in items):
+                return jsonify({"error": "Una o más prendas están agotadas o no disponibles. Actualiza el carrito antes de pagar."}), 409
 
             monto_centavos = int(round(total * 100))
             # Reserva inventario dentro de la misma transacción que crea el pedido.
@@ -453,6 +453,8 @@ def webhook_mercadopago():
         ok, state = _marcar_pago_y_entregar(
             referencia, "mercadopago", str(payment_id), payment.get("status"), monto
         )
+        if not ok and state in {"database_unavailable", "fulfillment_failed", "reference_not_found"}:
+            return jsonify({"error": "La confirmación no pudo guardarse; se necesita reintento del proveedor."}), 503
         if not ok:
             return jsonify({"received": True, "verified": False}), 200
         return jsonify({"received": True, "estado": state}), 200
