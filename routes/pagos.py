@@ -265,6 +265,8 @@ def _marcar_pago_y_entregar(referencia, proveedor, transaccion_id, estado_provee
 @requiere_autenticacion
 def iniciar_checkout():
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "El cuerpo debe ser un objeto JSON."}), 400
     proveedor = str(data.get("proveedor", "")).strip().lower()
     if proveedor not in {"mercadopago", "wompi"}:
         return jsonify({"error": "Proveedor no válido. Elige mercadopago o wompi."}), 400
@@ -278,22 +280,69 @@ def iniciar_checkout():
         with conn.cursor() as c:
             _asegurar_tablas(c)
             _asegurar_tabla_pagos(c)
-            c.execute("""SELECT pr.id_prenda,pr.nombre_prenda,pr.precio,ca.cantidad
-                         FROM carrito ca JOIN prendas pr ON pr.id_prenda=ca.id_prenda
+            c.execute("""SELECT ca.id_carrito,ca.id_prenda,ca.cantidad,
+                                pr.id_prenda,pr.nombre_prenda,pr.precio,pr.categoria,pr.color,
+                                pr.talla,pr.estilo,pr.temporada,pr.url_imagen,
+                                ts.stock,ts.activo
+                         FROM carrito ca
+                         JOIN prendas pr ON pr.id_prenda=ca.id_prenda
+                         LEFT JOIN tienda_stock ts ON ts.id_prenda=pr.id_prenda
                          WHERE ca.id_usuario=%s AND pr.id_usuario IS NULL
                          ORDER BY ca.fecha_agregado ASC FOR UPDATE""", (g.id_usuario,))
             items = c.fetchall()
             if not items:
                 return jsonify({"error": "Tu carrito está vacío."}), 400
+
             precio_minimo = float(os.environ.get("FITAI_MIN_CHECKOUT_COP", "1000"))
             if any(not x.get("precio") or float(x["precio"]) < precio_minimo for x in items):
-                return jsonify({"error": "Hay prendas con precio no válido para un cobro en COP. Revisa los precios del catálogo antes de cobrar."}), 409
+                return jsonify({"error": "Hay prendas con precio no válido para un cobro en COP. Revisa los precios reales antes de cobrar."}), 409
+            if any(x.get("stock") is None or not bool(x.get("activo")) or int(x.get("stock") or 0) < int(x["cantidad"]) for x in items):
+                return jsonify({"error": "Una o más prendas están agotadas o no disponibles. Actualiza el carrito antes de pagar."}), 409
+
             total = round(sum(float(x["precio"]) * int(x["cantidad"]) for x in items), 2)
             if total < precio_minimo:
-                return jsonify({"error": "Los precios del catálogo deben estar expresados en pesos colombianos completos (COP). Revisa el precio de las prendas antes de activar el cobro."}), 409
+                return jsonify({"error": "El total del pedido no alcanza el mínimo permitido en COP."}), 409
             if total <= 0 or total > MAX_TOTAL_COP:
                 return jsonify({"error": "El total del pedido está fuera del límite permitido."}), 400
+
+            current_snapshot = sorted(
+                (int(x["id_carrito"]), int(x["id_prenda"]), int(x["cantidad"])) for x in items
+            )
+            # Idempotencia por usuario: no crea otro cobro mientras exista uno pendiente.
+            c.execute("""SELECT pi.*,p.total
+                         FROM pago_intentos pi JOIN pedidos p ON p.id_pedido=pi.id_pedido
+                         WHERE p.id_usuario=%s AND p.estado='pendiente_pago'
+                           AND pi.estado IN ('creando','pendiente')
+                         ORDER BY pi.id_pago DESC LIMIT 1 FOR UPDATE""", (g.id_usuario,))
+            pending = c.fetchone()
+            if pending:
+                c.execute("""SELECT id_carrito,id_prenda,cantidad FROM pago_carrito_snapshot
+                             WHERE id_pedido=%s ORDER BY id_carrito""", (pending["id_pedido"],))
+                previous_snapshot = sorted(
+                    (int(x["id_carrito"]), int(x["id_prenda"]), int(x["cantidad"])) for x in c.fetchall()
+                )
+                if previous_snapshot != current_snapshot:
+                    return jsonify({"error": "Ya tienes un checkout pendiente. Termina o espera a que se resuelva antes de cambiar el carrito e iniciar otro pago."}), 409
+                if pending["proveedor"] == proveedor and pending.get("url_checkout"):
+                    return jsonify({
+                        "success": True, "pedido_id": int(pending["id_pedido"]),
+                        "referencia": pending["referencia"], "proveedor": proveedor,
+                        "estado": "pendiente_pago", "total": float(pending["total"]),
+                        "moneda": "COP", "checkout_url": pending["url_checkout"],
+                        "reutilizado": True,
+                    }), 200
+                return jsonify({"error": "Ya existe un checkout para este carrito. Continúa con el mismo método de pago para evitar un cobro duplicado."}), 409
+
             monto_centavos = int(round(total * 100))
+            # Reserva inventario dentro de la misma transacción que crea el pedido.
+            for item in items:
+                c.execute("""UPDATE tienda_stock SET stock=stock-%s
+                             WHERE id_prenda=%s AND activo=1 AND stock >= %s""",
+                          (int(item["cantidad"]), int(item["id_prenda"]), int(item["cantidad"])))
+                if c.rowcount != 1:
+                    conn.rollback()
+                    return jsonify({"error": "El inventario cambió mientras preparábamos el pedido. Actualiza el carrito e inténtalo de nuevo."}), 409
+
             c.execute("INSERT INTO pedidos(id_usuario,total,estado) VALUES(%s,%s,'pendiente_pago')",
                       (g.id_usuario, total))
             pedido_id = int(c.lastrowid)
@@ -302,13 +351,21 @@ def iniciar_checkout():
                     (id_pedido,id_prenda_catalogo,nombre_prenda,precio,cantidad)
                     VALUES(%s,%s,%s,%s,%s)""",
                     (pedido_id, item["id_prenda"], item["nombre_prenda"], item["precio"], item["cantidad"]))
+                c.execute("""INSERT INTO pago_detalle_snapshot
+                    (id_pedido,id_prenda_catalogo,categoria,color,talla,estilo,temporada,url_imagen)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (pedido_id, item["id_prenda"], item.get("categoria"), item.get("color"),
+                     item.get("talla"), item.get("estilo"), item.get("temporada"), item.get("url_imagen")))
+                c.execute("""INSERT INTO pago_carrito_snapshot
+                    (id_pedido,id_carrito,id_prenda,cantidad) VALUES(%s,%s,%s,%s)""",
+                    (pedido_id, item["id_carrito"], item["id_prenda"], item["cantidad"]))
             referencia = f"FITAI-{pedido_id}-{secrets.token_hex(6)}"
             c.execute("""INSERT INTO pago_intentos
                 (id_pedido,proveedor,referencia,monto_centavos,moneda,estado)
                 VALUES(%s,%s,%s,%s,'COP','creando')""",
                 (pedido_id, proveedor, referencia, monto_centavos))
         conn.commit()
-        # Llamar a la pasarela fuera de la transacción SQL.
+
         if proveedor == "mercadopago":
             checkout_url, provider_id = _crear_checkout_mercadopago(referencia, pedido_id, total, items)
         else:
@@ -316,7 +373,7 @@ def iniciar_checkout():
 
         with conn.cursor() as c:
             c.execute("""UPDATE pago_intentos SET estado='pendiente',url_checkout=%s,
-                         id_transaccion_proveedor=NULLIF(%s,'') WHERE referencia=%s""",
+                         id_transaccion_proveedor=NULLIF(%s,'') WHERE referencia=%s AND estado='creando'""",
                       (checkout_url, provider_id, referencia))
         conn.commit()
         return jsonify({
@@ -327,36 +384,18 @@ def iniciar_checkout():
     except RuntimeError as exc:
         conn.rollback()
         if pedido_id:
-            try:
-                with conn.cursor() as c:
-                    c.execute("UPDATE pago_intentos SET estado='error' WHERE id_pedido=%s AND estado='creando'", (pedido_id,))
-                    c.execute("UPDATE pedidos SET estado='error_pago' WHERE id_pedido=%s AND estado='pendiente_pago'", (pedido_id,))
-                conn.commit()
-            except Exception:
-                conn.rollback()
+            _marcar_checkout_error(conn, pedido_id)
         return jsonify({"error": str(exc)}), 503
     except requests.RequestException:
         conn.rollback()
         if pedido_id:
-            try:
-                with conn.cursor() as c:
-                    c.execute("UPDATE pago_intentos SET estado='error' WHERE id_pedido=%s AND estado='creando'", (pedido_id,))
-                    c.execute("UPDATE pedidos SET estado='error_pago' WHERE id_pedido=%s AND estado='pendiente_pago'", (pedido_id,))
-                conn.commit()
-            except Exception:
-                conn.rollback()
+            _marcar_checkout_error(conn, pedido_id)
         logger.exception("Error de red creando checkout")
-        return jsonify({"error": "La pasarela no respondió. El pedido no se ha marcado como pagado; vuelve a intentarlo."}), 502
+        return jsonify({"error": "La pasarela no respondió. Se liberó el inventario reservado; vuelve a intentarlo."}), 502
     except Exception:
         conn.rollback()
         if pedido_id:
-            try:
-                with conn.cursor() as c:
-                    c.execute("UPDATE pago_intentos SET estado='error' WHERE id_pedido=%s AND estado='creando'", (pedido_id,))
-                    c.execute("UPDATE pedidos SET estado='error_pago' WHERE id_pedido=%s AND estado='pendiente_pago'", (pedido_id,))
-                conn.commit()
-            except Exception:
-                conn.rollback()
+            _marcar_checkout_error(conn, pedido_id)
         logger.exception("No se pudo iniciar el checkout")
         return jsonify({"error": "No se pudo iniciar el pago. Revisa el carrito e inténtalo de nuevo."}), 500
     finally:
