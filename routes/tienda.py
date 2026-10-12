@@ -590,3 +590,101 @@ def verificar_pedido(referencia):
         }), 200
     finally:
         conn.close()
+
+
+
+def _aplicar_estado_notificacion(reference, proveedor, estado_proveedor, total_proveedor, moneda):
+    try:
+        total_pagado = Decimal(str(total_proveedor)).quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        return False
+    conn = obtener_conexion()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cursor:
+            _asegurar_tablas(cursor)
+            cursor.execute(
+                """SELECT total FROM tienda_pedidos
+                   WHERE referencia=%s AND proveedor_pago=%s LIMIT 1""",
+                (reference, proveedor),
+            )
+            order = cursor.fetchone()
+            if not order or total_pagado != Decimal(str(order["total"])).quantize(Decimal("0.01")) or moneda != "COP":
+                return False
+        status_map = {
+            "approved": "pagado", "APPROVED": "pagado",
+            "rejected": "rechazado", "DECLINED": "rechazado",
+            "cancelled": "cancelado", "VOIDED": "cancelado",
+            "pending": "pendiente_pago", "PENDING": "pendiente_pago",
+            "in_process": "pendiente_pago", "ERROR": "pendiente_pago",
+        }
+        new_state = status_map.get(str(estado_proveedor), "pendiente_pago")
+        found = _cambiar_estado_pedido(conn, reference, new_state)
+        if found:
+            conn.commit()
+        return bool(found)
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+@tienda_bp.route("/tienda/webhooks/mercadopago", methods=["POST"])
+def webhook_mercadopago():
+    """Consulta la transacción en la API autenticada de Mercado Pago antes de cambiar el pedido."""
+    token = os.environ.get("MP_ACCESS_TOKEN", "").strip()
+    if not token:
+        return jsonify({"received": False, "error": "Proveedor no configurado."}), 503
+    payload = request.get_json(silent=True) or {}
+    payment_id = (payload.get("data") or {}).get("id") or request.args.get("data.id")
+    if not payment_id or len(str(payment_id)) > 120:
+        return jsonify({"received": True}), 200
+    try:
+        response = requests.get(
+            "https://api.mercadopago.com/v1/payments/" + requests.utils.quote(str(payment_id), safe=""),
+            headers={"Authorization": "Bearer " + token},
+            timeout=(3.05, 10),
+        )
+        response.raise_for_status()
+        payment = response.json()
+        reference = str(payment.get("external_reference") or "")
+        if not reference.startswith("FITAI-"):
+            return jsonify({"received": True}), 200
+        total = payment.get("transaction_amount")
+        currency = str(payment.get("currency_id") or "")
+        ok = _aplicar_estado_notificacion(reference, "mercadopago", payment.get("status"), total, currency)
+        return jsonify({"received": True, "processed": ok}), 200
+    except (requests.RequestException, ValueError, TypeError):
+        return jsonify({"received": False, "error": "No se pudo verificar la notificación."}), 503
+
+
+@tienda_bp.route("/tienda/webhooks/wompi", methods=["POST"])
+def webhook_wompi():
+    """Valida el evento consultando la transacción con la llave privada del comercio."""
+    private_key = os.environ.get("WOMPI_PRIVATE_KEY", "").strip()
+    if not private_key:
+        return jsonify({"received": False, "error": "Proveedor no configurado."}), 503
+    payload = request.get_json(silent=True) or {}
+    transaction = ((payload.get("data") or {}).get("transaction") or {})
+    transaction_id = transaction.get("id")
+    if not transaction_id or len(str(transaction_id)) > 120:
+        return jsonify({"received": True}), 200
+    api_base = os.environ.get("WOMPI_API_BASE", "https://production.wompi.co/v1").rstrip("/")
+    try:
+        response = requests.get(
+            api_base + "/transactions/" + requests.utils.quote(str(transaction_id), safe=""),
+            headers={"Authorization": "Bearer " + private_key},
+            timeout=(3.05, 10),
+        )
+        response.raise_for_status()
+        verified = response.json().get("data", {})
+        reference = str(verified.get("reference") or "")
+        if not reference.startswith("FITAI-"):
+            return jsonify({"received": True}), 200
+        amount = Decimal(str(int(verified.get("amount_in_cents") or 0))) / Decimal("100")
+        ok = _aplicar_estado_notificacion(reference, "wompi", verified.get("status"), amount, verified.get("currency"))
+        return jsonify({"received": True, "processed": ok}), 200
+    except (requests.RequestException, ValueError, TypeError, InvalidOperation):
+        return jsonify({"received": False, "error": "No se pudo verificar la notificación."}), 503
