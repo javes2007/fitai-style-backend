@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request, g
 from backend.auth.tokens import requiere_autenticacion
 from backend.database.conexion import obtener_conexion
+from backend.routes.tienda import _asegurar_inventario
 
 compras_bp = Blueprint("compras", __name__)
 
@@ -60,12 +61,21 @@ def agregar():
     try:
         with conn.cursor() as c:
             _asegurar_tablas(c)
-            c.execute("SELECT * FROM prendas WHERE id_prenda=%s",(pid,)); p=c.fetchone()
+            _asegurar_inventario(c)
+            c.execute("""SELECT p.*,s.stock,s.activo FROM prendas p
+                         LEFT JOIN tienda_stock s ON s.id_prenda=p.id_prenda
+                         WHERE p.id_prenda=%s FOR UPDATE""",(pid,)); p=c.fetchone()
             if not p:return jsonify({"error":"Prenda no encontrada."}),404
             if p["id_usuario"] is not None:return jsonify({"error":"La prenda ya pertenece a tu armario."}),409
-            if not p["precio"] or float(p["precio"])<=0:return jsonify({"error":"La prenda no tiene precio válido."}),409
+            if not p["precio"] or float(p["precio"])<1000:return jsonify({"error":"La prenda no tiene un precio de venta confirmado en COP."}),409
+            if not p.get("activo") or p.get("stock") is None or int(p.get("stock") or 0) < 1:
+                return jsonify({"error":"La prenda está agotada o no disponible."}),409
+            c.execute("SELECT cantidad FROM carrito WHERE id_usuario=%s AND id_prenda=%s FOR UPDATE",(g.id_usuario,pid))
+            existing=c.fetchone()
+            if (int(existing["cantidad"]) if existing else 0)+cantidad > int(p["stock"]):
+                return jsonify({"error":"La cantidad supera el inventario disponible."}),409
             c.execute("""INSERT INTO carrito(id_usuario,id_prenda,cantidad) VALUES(%s,%s,%s)
-                         ON DUPLICATE KEY UPDATE cantidad=LEAST(cantidad+VALUES(cantidad),20)""",
+                         ON DUPLICATE KEY UPDATE cantidad=cantidad+VALUES(cantidad)""",
                       (g.id_usuario,pid,cantidad))
         conn.commit(); return jsonify({"success":True,"mensaje":"Prenda añadida al carrito."}),201
     except Exception:
