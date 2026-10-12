@@ -177,7 +177,7 @@ def _crear_checkout_wompi(referencia, pedido_id, monto_centavos):
 
 
 def _marcar_pago_y_entregar(referencia, proveedor, transaccion_id, estado_proveedor, monto_centavos):
-    """Actualiza el estado solo después de verificar la transacción con el proveedor."""
+    """Confirma el pago con datos consultados al proveedor y entrega de forma idempotente."""
     conn = obtener_conexion()
     if not conn:
         return False, "database_unavailable"
@@ -197,37 +197,50 @@ def _marcar_pago_y_entregar(referencia, proveedor, transaccion_id, estado_provee
                 conn.rollback()
                 return False, "amount_mismatch"
 
-            estado = str(estado_proveedor or "").upper()
-            if estado != "APPROVED":
-                estado_local = {
+            current_state = str(pago["estado"] or "").lower()
+            provider_state = str(estado_proveedor or "").upper()
+            terminal_states = {"pagado", "rechazado", "anulado", "error"}
+
+            if current_state == "pagado" or pago["estado_pedido"] == "pagado":
+                conn.commit()
+                return True, "pagado"
+            # Una notificación repetida no libera inventario dos veces ni revierte un estado final.
+            if current_state in {"rechazado", "anulado", "error"}:
+                conn.commit()
+                return True, current_state
+
+            if provider_state != "APPROVED":
+                local_state = {
                     "DECLINED": "rechazado",
                     "VOIDED": "anulado",
                     "ERROR": "error",
                     "PENDING": "pendiente",
-                }.get(estado, "pendiente")
+                    "IN_PROCESS": "pendiente",
+                }.get(provider_state, "pendiente")
+                if local_state in {"rechazado", "anulado", "error"}:
+                    _liberar_stock_pedido(c, pago["id_pedido"])
                 c.execute("""UPDATE pago_intentos SET estado=%s,
                              id_transaccion_proveedor=COALESCE(NULLIF(%s,''),id_transaccion_proveedor)
-                             WHERE id_pago=%s""", (estado_local, str(transaccion_id or ""), pago["id_pago"]))
+                             WHERE id_pago=%s""",
+                          (local_state, str(transaccion_id or ""), pago["id_pago"]))
                 c.execute("UPDATE pedidos SET estado=%s WHERE id_pedido=%s AND estado <> 'pagado'",
-                          (estado_local, pago["id_pedido"]))
+                          (local_state, pago["id_pedido"]))
                 conn.commit()
-                return True, estado_local
+                return True, local_state
 
-            # Idempotencia: un webhook repetido nunca entrega dos veces.
-            if pago["estado"] == "pagado" or pago["estado_pedido"] == "pagado":
-                conn.commit()
-                return True, "pagado"
-
+            # Snapshot independiente del catálogo: un cambio/borrado posterior no bloquea la entrega.
             c.execute("""SELECT d.id_prenda_catalogo,d.nombre_prenda,d.precio,d.cantidad,
-                                pr.categoria,pr.color,pr.talla,pr.estilo,pr.temporada,pr.url_imagen
-                         FROM pedido_detalles d LEFT JOIN prendas pr
-                           ON pr.id_prenda=d.id_prenda_catalogo AND pr.id_usuario IS NULL
+                                s.categoria,s.color,s.talla,s.estilo,s.temporada,s.url_imagen
+                         FROM pedido_detalles d
+                         JOIN pago_detalle_snapshot s
+                           ON s.id_pedido=d.id_pedido AND s.id_prenda_catalogo=d.id_prenda_catalogo
                          WHERE d.id_pedido=%s""", (pago["id_pedido"],))
             detalles = c.fetchall()
+            if not detalles:
+                raise RuntimeError("No hay snapshot de prendas para entregar el pedido.")
             for item in detalles:
                 if not item.get("categoria"):
-                    # No se marca como entregado si no se puede reconstruir el artículo.
-                    raise RuntimeError("No se pudo localizar una prenda del pedido para entregarla.")
+                    raise RuntimeError("El snapshot de una prenda no tiene categoría.")
                 for _ in range(int(item["cantidad"])):
                     c.execute("""INSERT INTO prendas
                         (id_usuario,nombre_prenda,categoria,color,talla,estilo,temporada,url_imagen,precio)
@@ -237,7 +250,7 @@ def _marcar_pago_y_entregar(referencia, proveedor, transaccion_id, estado_provee
             c.execute("UPDATE pago_intentos SET estado='pagado', id_transaccion_proveedor=%s WHERE id_pago=%s",
                       (str(transaccion_id or ""), pago["id_pago"]))
             c.execute("UPDATE pedidos SET estado='pagado' WHERE id_pedido=%s", (pago["id_pedido"],))
-            c.execute("DELETE FROM carrito WHERE id_usuario=%s", (pago["id_usuario"],))
+            _limpiar_carrito_snapshot(c, pago["id_pedido"], pago["id_usuario"])
         conn.commit()
         return True, "pagado"
     except Exception:
