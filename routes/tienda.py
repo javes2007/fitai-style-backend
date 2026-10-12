@@ -85,6 +85,26 @@ def _asegurar_inventario(cursor):
                       SELECT id_prenda, 0, 1 FROM prendas WHERE id_usuario IS NULL""")
 
 
+
+
+def _asegurar_tabla_envios(cursor):
+    cursor.execute("""CREATE TABLE IF NOT EXISTS pedido_envios (
+        id_pedido INT PRIMARY KEY,
+        nombre VARCHAR(120) NOT NULL,
+        email VARCHAR(180) NOT NULL,
+        telefono VARCHAR(40) NOT NULL,
+        direccion VARCHAR(255) NOT NULL,
+        ciudad VARCHAR(100) NOT NULL,
+        departamento VARCHAR(100) NOT NULL,
+        estado_envio VARCHAR(30) NOT NULL DEFAULT 'pendiente_preparacion',
+        transportadora VARCHAR(80) NULL,
+        guia VARCHAR(120) NULL,
+        fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_pedido_envios_estado (estado_envio)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+
+
 def _admin_autorizado():
     expected = os.environ.get("STORE_ADMIN_TOKEN", "").strip()
     provided = request.headers.get("X-Store-Admin-Token", "").strip()
@@ -258,3 +278,102 @@ def admin_actualizar_producto(id_prenda):
     finally:
         conn.close()
 
+
+
+@tienda_bp.route("/tienda/admin/pedidos", methods=["GET"])
+def admin_listar_pedidos():
+    if not os.environ.get("STORE_ADMIN_TOKEN", "").strip():
+        return jsonify({"error": "Configura STORE_ADMIN_TOKEN en el backend."}), 503
+    if not _admin_autorizado():
+        return jsonify({"error": "No autorizado."}), 401
+    conn = obtener_conexion()
+    if not conn:
+        return jsonify({"error": "Base de datos no disponible."}), 503
+    try:
+        from backend.routes.compras import _asegurar_tablas
+        from backend.routes.pagos import _asegurar_tabla_pagos
+        with conn.cursor() as cursor:
+            _asegurar_tablas(cursor)
+            _asegurar_tabla_pagos(cursor)
+            _asegurar_tabla_envios(cursor)
+            cursor.execute("""SELECT p.id_pedido,p.id_usuario,p.total,p.estado,p.fecha_creacion,
+                                     pi.proveedor,pi.estado AS estado_pago,
+                                     e.nombre,e.email,e.telefono,e.direccion,e.ciudad,e.departamento,
+                                     e.estado_envio,e.transportadora,e.guia
+                              FROM pedidos p
+                              JOIN pago_intentos pi ON pi.id_pedido=p.id_pedido
+                              JOIN pedido_envios e ON e.id_pedido=p.id_pedido
+                              WHERE p.estado='pagado'
+                              ORDER BY p.fecha_creacion DESC LIMIT 100""")
+            orders = cursor.fetchall()
+            result = []
+            for order in orders:
+                order["total"] = float(order["total"])
+                if order.get("fecha_creacion"):
+                    order["fecha_creacion"] = order["fecha_creacion"].isoformat()
+                cursor.execute("""SELECT nombre_prenda,precio,cantidad FROM pedido_detalles
+                                  WHERE id_pedido=%s ORDER BY id_detalle""", (order["id_pedido"],))
+                order["detalles"] = [
+                    {"nombre": row["nombre_prenda"], "precio": float(row["precio"]), "cantidad": int(row["cantidad"])}
+                    for row in cursor.fetchall()
+                ]
+                result.append(order)
+            return jsonify({"success": True, "pedidos": result}), 200
+    except Exception:
+        conn.rollback()
+        logger.exception("No se pudieron listar los pedidos de tienda")
+        return jsonify({"error": "No se pudieron cargar los pedidos."}), 503
+    finally:
+        conn.close()
+
+
+@tienda_bp.route("/tienda/admin/pedidos/<int:id_pedido>", methods=["PATCH"])
+def admin_actualizar_envio(id_pedido):
+    if not os.environ.get("STORE_ADMIN_TOKEN", "").strip():
+        return jsonify({"error": "Configura STORE_ADMIN_TOKEN en el backend."}), 503
+    if not _admin_autorizado():
+        return jsonify({"error": "No autorizado."}), 401
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "El cuerpo debe ser un objeto JSON."}), 400
+    allowed = {"pendiente_preparacion", "preparando", "enviado", "entregado", "incidencia", "cancelado"}
+    estado = data.get("estado_envio")
+    if estado is not None and estado not in allowed:
+        return jsonify({"error": "Estado de envío no válido."}), 400
+    transportadora = str(data.get("transportadora", "")).strip()[:80] or None
+    guia = str(data.get("guia", "")).strip()[:120] or None
+    if estado is None and "transportadora" not in data and "guia" not in data:
+        return jsonify({"error": "Envía estado_envio, transportadora o guia."}), 400
+    conn = obtener_conexion()
+    if not conn:
+        return jsonify({"error": "Base de datos no disponible."}), 503
+    try:
+        from backend.routes.compras import _asegurar_tablas
+        from backend.routes.pagos import _asegurar_tabla_pagos
+        with conn.cursor() as cursor:
+            _asegurar_tablas(cursor)
+            _asegurar_tabla_pagos(cursor)
+            _asegurar_tabla_envios(cursor)
+            cursor.execute("SELECT id_pedido FROM pedidos WHERE id_pedido=%s AND estado='pagado' FOR UPDATE", (id_pedido,))
+            if not cursor.fetchone():
+                conn.rollback()
+                return jsonify({"error": "Pedido pagado no encontrado."}), 404
+            fields, values = [], []
+            if estado is not None:
+                fields.append("estado_envio=%s")
+                values.append(estado)
+            if "transportadora" in data:
+                fields.append("transportadora=%s")
+                values.append(transportadora)
+            if "guia" in data:
+                fields.append("guia=%s")
+                values.append(guia)
+            cursor.execute("UPDATE pedido_envios SET " + ", ".join(fields) + " WHERE id_pedido=%s", [*values, id_pedido])
+        conn.commit()
+        return jsonify({"success": True, "id_pedido": id_pedido, "mensaje": "Estado de envío actualizado."}), 200
+    except Exception:
+        conn.rollback()
+        logger.exception("No se pudo actualizar el estado de envío")
+        return jsonify({"error": "No se pudo actualizar el envío."}), 500
+    finally:
+        conn.close()
