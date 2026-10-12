@@ -53,7 +53,7 @@ El precio del ejemplo es solo ilustrativo: cámbialo por el precio real que cobr
 
 ## 3. Qué se integra
 
-- La tienda propia usa catálogo, precio en COP e inventario gestionados en el backend.
+- La tienda propia usa catálogo, precio en COP e inventario gestionados en el backend. Tras el pago verificado, la prenda también se añade al armario virtual de FitAI; los datos de entrega quedan guardados para que el administrador gestione el envío físico manualmente.
 - El carrito valida disponibilidad y el checkout reserva stock, impide cobros duplicados, guarda snapshots de la prenda y elimina solo las unidades del carrito incluidas en el pedido. El checkout también guarda los datos de entrega; el estado de preparación/envío se administra desde la API protegida.
 - Mercado Pago y Wompi confirman el pago mediante consulta servidor-a-servidor. Un parámetro de retorno del navegador no se toma como prueba de pago.
 - Mercado Libre muestra resultados reales de su búsqueda pública Colombia. Amazon, SHEIN y Temu abren búsquedas externas; para mostrar catálogo/afiliación dentro de FitAI se requiere acceso oficial y autorización de la cuenta. Referencias: Amazon Creators API https://affiliate-program.amazon.com/creatorsapi/docs/en-us/onboarding, afiliados SHEIN https://www.shein.com.co/affiliate-a-427.html, Temu Partner https://partner-us.temu.com/.
