@@ -395,3 +395,109 @@ def pedidos_usuario():
             return jsonify({"success": True, "pedidos": rows}), 200
     finally:
         conn.close()
+
+
+
+@tienda_bp.route("/tienda/pedidos/<string:referencia>/verificar", methods=["GET"])
+@requiere_autenticacion
+def verificar_pedido(referencia):
+    """Verifica el estado consultando la API del proveedor; nunca confía en query params de retorno."""
+    transaction_id = request.args.get("transaction_id", "").strip()
+    conn = obtener_conexion()
+    if not conn:
+        return _error("La base de datos no está disponible.", 503)
+    try:
+        with conn.cursor() as cursor:
+            _asegurar_tablas(cursor)
+            cursor.execute(
+                """SELECT id, referencia, proveedor_pago, estado, total, moneda
+                   FROM tienda_pedidos WHERE referencia=%s AND id_usuario=%s LIMIT 1""",
+                (referencia, g.id_usuario),
+            )
+            pedido = cursor.fetchone()
+            if not pedido:
+                return _error("No encontramos ese pedido en tu cuenta.", 404)
+            if pedido["estado"] == "pagado":
+                return jsonify({"success": True, "referencia": referencia, "estado": "pagado"}), 200
+            proveedor = pedido["proveedor_pago"]
+            total = Decimal(str(pedido["total"]))
+            expected_cents = int((total * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+        verified_status = None
+        if proveedor == "mercadopago":
+            token = os.environ.get("MP_ACCESS_TOKEN", "").strip()
+            if not token:
+                return _error("La verificación de Mercado Pago no está configurada.", 503)
+            try:
+                response = requests.get(
+                    "https://api.mercadopago.com/v1/payments/search",
+                    params={"external_reference": referencia, "sort": "date_created", "criteria": "desc", "limit": 10},
+                    headers={"Authorization": "Bearer " + token},
+                    timeout=(3.05, 10),
+                )
+                response.raise_for_status()
+                results = response.json().get("results", [])
+                for payment in results:
+                    if str(payment.get("external_reference") or "") != referencia:
+                        continue
+                    transaction_total = Decimal(str(payment.get("transaction_amount", "0"))).quantize(Decimal("0.01"))
+                    if transaction_total != total or str(payment.get("currency_id") or "") != "COP":
+                        continue
+                    verified_status = payment.get("status")
+                    if verified_status == "approved":
+                        break
+            except (requests.RequestException, ValueError, TypeError, InvalidOperation):
+                return _error("No se pudo verificar el pago con Mercado Pago. Inténtalo de nuevo.", 503)
+        elif proveedor == "wompi":
+            private_key = os.environ.get("WOMPI_PRIVATE_KEY", "").strip()
+            if not private_key:
+                return _error("La verificación de Wompi no está configurada (falta WOMPI_PRIVATE_KEY).", 503)
+            if not transaction_id or len(transaction_id) > 120:
+                return _error("Falta el identificador de la transacción de Wompi para verificar el pago.", 400)
+            api_base = os.environ.get("WOMPI_API_BASE", "https://production.wompi.co/v1").rstrip("/")
+            try:
+                response = requests.get(
+                    api_base + "/transactions/" + requests.utils.quote(transaction_id, safe=""),
+                    headers={"Authorization": "Bearer " + private_key},
+                    timeout=(3.05, 10),
+                )
+                response.raise_for_status()
+                transaction = response.json().get("data", {})
+                if str(transaction.get("reference") or "") != referencia:
+                    return _error("La referencia de la transacción no coincide con el pedido.", 409)
+                if int(transaction.get("amount_in_cents") or 0) != expected_cents or transaction.get("currency") != "COP":
+                    return _error("El valor de la transacción no coincide con el pedido.", 409)
+                verified_status = transaction.get("status")
+            except (requests.RequestException, ValueError, TypeError):
+                return _error("No se pudo verificar el pago con Wompi. Inténtalo de nuevo.", 503)
+        else:
+            return _error("Proveedor de pago no reconocido.", 409)
+
+        state_map = {
+            "approved": "pagado",
+            "APPROVED": "pagado",
+            "rejected": "rechazado",
+            "DECLINED": "rechazado",
+            "cancelled": "cancelado",
+            "VOIDED": "cancelado",
+            "pending": "pendiente_pago",
+            "PENDING": "pendiente_pago",
+            "in_process": "pendiente_pago",
+            "ERROR": "pendiente_pago",
+        }
+        new_state = state_map.get(str(verified_status), "pendiente_pago")
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """UPDATE tienda_pedidos SET estado=%s
+                   WHERE referencia=%s AND id_usuario=%s AND estado <> 'pagado'""",
+                (new_state, referencia, g.id_usuario),
+            )
+        conn.commit()
+        return jsonify({
+            "success": True,
+            "referencia": referencia,
+            "estado": new_state,
+            "mensaje": "Estado consultado directamente con la pasarela de pago."
+        }), 200
+    finally:
+        conn.close()
