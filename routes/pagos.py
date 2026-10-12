@@ -16,7 +16,7 @@ from flask import Blueprint, jsonify, request, g
 from backend.auth.tokens import requiere_autenticacion
 from backend.database.conexion import obtener_conexion
 from backend.routes.compras import _asegurar_tablas
-from backend.routes.tienda import _asegurar_inventario
+from backend.routes.tienda import _asegurar_inventario, _asegurar_tabla_envios
 
 pagos_bp = Blueprint("pagos", __name__)
 logger = logging.getLogger(__name__)
@@ -62,6 +62,7 @@ def _asegurar_tabla_pagos(cursor):
         INDEX idx_pago_carrito_prenda (id_prenda)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     _asegurar_inventario(cursor)
+    _asegurar_tabla_envios(cursor)
 
 
 def _liberar_stock_pedido(cursor, pedido_id):
