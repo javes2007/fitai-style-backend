@@ -276,6 +276,9 @@ def iniciar_checkout():
     envio = {key: str(envio.get(key, "")).strip()[:255] for key in campos_envio}
     if any(not envio[key] for key in campos_envio) or "@" not in envio["email"]:
         return jsonify({"error": "Completa todos los datos de entrega con un correo válido."}), 400
+    if (len(envio["nombre"]) > 120 or len(envio["email"]) > 180 or len(envio["telefono"]) > 40
+            or len(envio["ciudad"]) > 100 or len(envio["departamento"]) > 100):
+        return jsonify({"error": "Uno o más datos de entrega superan el tamaño permitido."}), 400
     if proveedor not in {"mercadopago", "wompi"}:
         return jsonify({"error": "Proveedor no válido. Elige mercadopago o wompi."}), 400
 
