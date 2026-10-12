@@ -16,6 +16,7 @@ from flask import Blueprint, jsonify, request, g
 from backend.auth.tokens import requiere_autenticacion
 from backend.database.conexion import obtener_conexion
 from backend.routes.compras import _asegurar_tablas
+from backend.routes.tienda import _asegurar_inventario
 
 pagos_bp = Blueprint("pagos", __name__)
 logger = logging.getLogger(__name__)
@@ -41,6 +42,82 @@ def _asegurar_tabla_pagos(cursor):
         INDEX idx_pago_pedido (id_pedido),
         INDEX idx_pago_proveedor_transaccion (proveedor,id_transaccion_proveedor)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS pago_detalle_snapshot (
+        id_pedido INT NOT NULL,
+        id_prenda_catalogo INT NOT NULL,
+        categoria VARCHAR(50) NULL,
+        color VARCHAR(50) NULL,
+        talla VARCHAR(20) NULL,
+        estilo VARCHAR(50) NULL,
+        temporada VARCHAR(30) NULL,
+        url_imagen VARCHAR(500) NULL,
+        PRIMARY KEY (id_pedido,id_prenda_catalogo)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS pago_carrito_snapshot (
+        id_pedido INT NOT NULL,
+        id_carrito INT NOT NULL,
+        id_prenda INT NOT NULL,
+        cantidad INT NOT NULL,
+        PRIMARY KEY (id_pedido,id_carrito),
+        INDEX idx_pago_carrito_prenda (id_prenda)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+    _asegurar_inventario(cursor)
+
+
+def _liberar_stock_pedido(cursor, pedido_id):
+    cursor.execute(
+        "SELECT id_prenda_catalogo,cantidad FROM pedido_detalles WHERE id_pedido=%s",
+        (pedido_id,),
+    )
+    for item in cursor.fetchall():
+        cursor.execute(
+            "UPDATE tienda_stock SET stock=stock+%s WHERE id_prenda=%s",
+            (int(item["cantidad"]), int(item["id_prenda_catalogo"])),
+        )
+
+
+def _marcar_checkout_error(conn, pedido_id):
+    """Marca error y libera stock reservado una sola vez."""
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT id_pago,estado FROM pago_intentos WHERE id_pedido=%s FOR UPDATE",
+                (pedido_id,),
+            )
+            payment = cursor.fetchone()
+            if payment and payment["estado"] not in {"pagado", "rechazado", "anulado", "error"}:
+                _liberar_stock_pedido(cursor, pedido_id)
+                cursor.execute(
+                    "UPDATE pago_intentos SET estado='error' WHERE id_pago=%s",
+                    (payment["id_pago"],),
+                )
+                cursor.execute(
+                    "UPDATE pedidos SET estado='error_pago' WHERE id_pedido=%s AND estado='pendiente_pago'",
+                    (pedido_id,),
+                )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        logger.exception("No se pudo liberar la reserva de stock del checkout fallido")
+
+
+def _limpiar_carrito_snapshot(cursor, pedido_id, usuario_id):
+    cursor.execute(
+        "SELECT id_carrito,cantidad FROM pago_carrito_snapshot WHERE id_pedido=%s",
+        (pedido_id,),
+    )
+    for snap in cursor.fetchall():
+        cantidad = int(snap["cantidad"])
+        cursor.execute(
+            """UPDATE carrito SET cantidad=cantidad-%s
+               WHERE id_carrito=%s AND id_usuario=%s AND cantidad>%s""",
+            (cantidad, int(snap["id_carrito"]), usuario_id, cantidad),
+        )
+        if cursor.rowcount == 0:
+            cursor.execute(
+                "DELETE FROM carrito WHERE id_carrito=%s AND id_usuario=%s",
+                (int(snap["id_carrito"]), usuario_id),
+            )
 
 
 def _crear_checkout_mercadopago(referencia, pedido_id, monto, items):
