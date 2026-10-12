@@ -269,6 +269,13 @@ def iniciar_checkout():
     if not isinstance(data, dict):
         return jsonify({"error": "El cuerpo debe ser un objeto JSON."}), 400
     proveedor = str(data.get("proveedor", "")).strip().lower()
+    envio = data.get("envio") or {}
+    if not isinstance(envio, dict):
+        return jsonify({"error": "Los datos de envío no tienen formato válido."}), 400
+    campos_envio = ("nombre", "email", "telefono", "direccion", "ciudad", "departamento")
+    envio = {key: str(envio.get(key, "")).strip()[:255] for key in campos_envio}
+    if any(not envio[key] for key in campos_envio) or "@" not in envio["email"]:
+        return jsonify({"error": "Completa todos los datos de entrega con un correo válido."}), 400
     if proveedor not in {"mercadopago", "wompi"}:
         return jsonify({"error": "Proveedor no válido. Elige mercadopago o wompi."}), 400
 
@@ -347,6 +354,7 @@ def iniciar_checkout():
             c.execute("INSERT INTO pedidos(id_usuario,total,estado) VALUES(%s,%s,'pendiente_pago')",
                       (g.id_usuario, total))
             pedido_id = int(c.lastrowid)
+            c.execute("INSERT INTO pedido_envios (id_pedido,nombre,email,telefono,direccion,ciudad,departamento) VALUES(%s,%s,%s,%s,%s,%s,%s)", (pedido_id, envio["nombre"], envio["email"], envio["telefono"], envio["direccion"], envio["ciudad"], envio["departamento"]))
             for item in items:
                 c.execute("""INSERT INTO pedido_detalles
                     (id_pedido,id_prenda_catalogo,nombre_prenda,precio,cantidad)
