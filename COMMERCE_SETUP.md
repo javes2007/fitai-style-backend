@@ -6,7 +6,7 @@ En Render, configura las variables del archivo .env.example en Environment. No p
 
 - MERCADOPAGO_ACCESS_TOKEN: token de prueba de Mercado Pago (TEST-...) durante la validación.
 - PUBLIC_BACKEND_URL: URL HTTPS real del backend.
-- FRONTEND_URL: URL HTTPS real del frontend.
+- FRONTEND_URL: URL HTTPS real del frontend. Configura también FRONTEND_ORIGINS con el origen público exacto, por ejemplo https://fitai-style-frontend.vercel.app, para permitir las solicitudes CORS.
 - WOMPI_PUBLIC_KEY, WOMPI_PRIVATE_KEY y WOMPI_INTEGRITY_SECRET: llaves de prueba de tu comercio Wompi.
 - FITAI_MIN_CHECKOUT_COP=1000: bloquea los precios de demostración actuales (25, 35, 45, etc.).
 - STORE_ADMIN_TOKEN: token aleatorio largo para crear/actualizar precios e inventario; úsalo solo desde Postman/curl.
