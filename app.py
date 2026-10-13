@@ -10,8 +10,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 # El repositorio contiene el backend en su propia raíz, pero el código
 # histórico importa los módulos con el prefijo "backend.". Registramos
-# esta raíz como un paquete compatible para que ambos entornos funcionen:
-# desarrollo local y despliegue en Render.
+# esta raíz como un paquete compatible para desarrollo y Render.
 _backend_root = os.path.dirname(os.path.abspath(__file__))
 if "backend" not in sys.modules:
     _backend_package = types.ModuleType("backend")
@@ -20,6 +19,7 @@ if "backend" not in sys.modules:
     sys.modules["backend"] = _backend_package
 
 from backend.config import Config
+from backend.security import limiter, configurar_seguridad
 from backend.database.conexion import obtener_conexion
 from backend.routes.usuarios import usuarios_bp
 from backend.routes.firebase_auth import firebase_auth_bp
@@ -33,23 +33,19 @@ from backend.routes.compras import compras_bp
 
 app = Flask(__name__)
 app.config.from_object(Config)
+limiter.init_app(app)
+configurar_seguridad(app)
 
-# En desarrollo, sin FRONTEND_ORIGINS, permitimos el frontend local.
-cors_origins = Config.CORS_ORIGINS or [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5500",
-    "http://127.0.0.1:5500",
-    "null",  # abrir HTML con file:// (solo desarrollo)
-]
+# En producción define FRONTEND_ORIGINS con los dominios HTTPS exactos.
+# No se habilita "null" ni file://.
 CORS(
     app,
     resources={
         r"/api/*": {
-            "origins": cors_origins,
+            "origins": Config.CORS_ORIGINS,
             "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
-            "expose_headers": ["Content-Type"],
+            "expose_headers": ["Content-Type", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
             "max_age": 600,
         }
     }
@@ -71,15 +67,13 @@ def inicio():
     return jsonify({
         "proyecto": "FitAI Style API",
         "estado": "Servidor funcionando",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "mensaje": "Backend unificado de FitAI Style"
     })
 
 
 @app.route("/health")
 def health():
-    # Health check liviano para Render: confirma que Flask está vivo sin
-    # depender de MySQL ni de servicios externos.
     return jsonify({"status": "ok", "backend": True}), 200
 
 
@@ -117,15 +111,21 @@ def status():
 
 @app.errorhandler(413)
 def request_too_large(_error):
-    return jsonify({
-        "status": "error",
-        "error": "El archivo o la solicitud supera el tamaño máximo permitido."
-    }), 413
+    return jsonify({"status": "error", "error": "El archivo o la solicitud supera el tamaño máximo permitido."}), 413
+
+
+@app.errorhandler(429)
+def too_many_requests(_error):
+    return jsonify({"status": "error", "error": "Demasiadas solicitudes. Espera un momento antes de volver a intentarlo."}), 429
 
 
 @app.route("/api/contacto", methods=["POST"])
+@limiter.limit("3 per hour")
 def procesar_contacto():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "El cuerpo debe ser un objeto JSON válido."}), 400
+
     nombre = str(data.get("nombre", "")).strip()
     email = str(data.get("email", "")).strip().lower()
     asunto = str(data.get("asunto", "")).strip()
@@ -133,15 +133,14 @@ def procesar_contacto():
 
     if not all([nombre, email, asunto, mensaje]):
         return jsonify({"error": "Todos los campos son obligatorios."}), 400
-    if len(nombre) > 100 or len(asunto) > 150 or len(mensaje) > 5000:
+    if len(nombre) > 100 or len(email) > 254 or len(asunto) > 150 or len(mensaje) > 5000:
         return jsonify({"error": "Uno de los campos supera el tamaño permitido."}), 400
-    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]{2,}", email):
+    if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}", email):
         return jsonify({"error": "El correo electrónico no es válido."}), 400
 
     conn = obtener_conexion()
     if not conn:
         return jsonify({"error": "No se pudo conectar con la base de datos."}), 503
-
     try:
         with conn.cursor() as cursor:
             cursor.execute(
@@ -150,10 +149,7 @@ def procesar_contacto():
                 (nombre, email, asunto, mensaje)
             )
         conn.commit()
-        return jsonify({
-            "status": "success",
-            "mensaje": "Mensaje recibido correctamente."
-        }), 201
+        return jsonify({"status": "success", "mensaje": "Mensaje recibido correctamente."}), 201
     except Exception:
         conn.rollback()
         app.logger.exception("Error guardando contacto")
@@ -163,8 +159,4 @@ def procesar_contacto():
 
 
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
-        debug=Config.DEBUG
-    )
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=Config.DEBUG)
