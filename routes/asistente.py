@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 from backend.ia.asistente_virtual import conversar, analizar_imagen_javes, NOMBRE_ASISTENTE
+from backend.security import limiter
 
 asistente_bp = Blueprint("asistente", __name__)
 
@@ -29,6 +30,7 @@ def _respuesta_error_ia(exc):
 
 
 @asistente_bp.route("/ia/asistente", methods=["POST"])
+@limiter.limit("15 per minute")
 def asistente_chat():
     data = request.get_json(silent=True) or {}
     mensaje = str(data.get("mensaje") or "").strip()
@@ -59,6 +61,7 @@ def asistente_chat():
 
 
 @asistente_bp.route("/ia/asistente-imagen", methods=["POST"])
+@limiter.limit("5 per minute")
 def asistente_imagen():
     archivo = request.files.get("imagen")
     if not archivo:
