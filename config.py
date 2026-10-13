@@ -29,7 +29,7 @@ class Config:
         "https://cdn.jsdelivr.net/gh/nirholas/three.ws@5c7d87a768152cd64a8cce2feef8831411062eb5/public/avatars/parametric-base.glb",
     )
 
-    DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
+    DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1" and not os.environ.get("RENDER" )
 
     _default_cors_origins = [
         "https://fitai-style-frontend.vercel.app",
