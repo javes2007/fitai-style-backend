@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, g
 from backend.auth.tokens import requiere_autenticacion
+from backend.security import limiter
 from backend.database.conexion import obtener_conexion
 import os
 import uuid
@@ -126,6 +127,8 @@ def guardar_perfil_avatar():
     "/avatar/render",
     methods=["POST"]
 )
+@requiere_autenticacion
+@limiter.limit("5 per minute")
 def render_avatar():
 
     imagen_guardada_path = None
