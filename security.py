@@ -24,7 +24,7 @@ def configurar_seguridad(app):
 
     @app.before_request
     def exigir_https():
-        if app.debug or os.environ.get("FORCE_HTTPS", "1") != "1":
+        if app.debug or os.environ.get("FORCE_HTTPS", "1" if os.environ.get("RENDER") else "0") != "1":
             return None
         if request.is_secure:
             return None
@@ -39,7 +39,7 @@ def configurar_seguridad(app):
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         response.headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
-        if not app.debug and os.environ.get("FORCE_HTTPS", "1") == "1" and request.is_secure:
+        if not app.debug and os.environ.get("FORCE_HTTPS", "1" if os.environ.get("RENDER") else "0") == "1" and request.is_secure:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if response.mimetype == "application/json" and request.path.startswith(
             ("/api/auth", "/api/login", "/api/register", "/api/usuarios")
