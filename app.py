@@ -135,7 +135,7 @@ def procesar_contacto():
         return jsonify({"error": "Todos los campos son obligatorios."}), 400
     if len(nombre) > 100 or len(email) > 254 or len(asunto) > 150 or len(mensaje) > 5000:
         return jsonify({"error": "Uno de los campos supera el tamaño permitido."}), 400
-    if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}", email):
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]{2,}", email):
         return jsonify({"error": "El correo electrónico no es válido."}), 400
 
     conn = obtener_conexion()
