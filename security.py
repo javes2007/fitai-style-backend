@@ -27,10 +27,18 @@ def configurar_seguridad(app):
         if app.debug or os.environ.get("FORCE_HTTPS", "1" if os.environ.get("RENDER") else "0") != "1":
             return None
         if request.is_secure:
-            return None
-        if request.method in {"GET", "HEAD", "OPTIONS"}:
+            pass
+        elif request.method in {"GET", "HEAD", "OPTIONS"}:
             return redirect(request.url.replace("http://", "https://", 1), code=308)
-        return jsonify({"error": "Se requiere HTTPS para esta solicitud."}), 400
+            return jsonify({"error": "Se requiere HTTPS para esta solicitud."}), 400
+
+        # Los endpoints JSON de la API esperan objetos; rechazar arrays,
+        # escalares y JSON malformado antes de que las rutas accedan a .get().
+        if request.method in {"POST", "PUT", "PATCH"} and request.path.startswith("/api/") and request.is_json:
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({"error": "El cuerpo debe ser un objeto JSON válido."}), 400
+        return None
 
     @app.after_request
     def cabeceras_seguras(response):
