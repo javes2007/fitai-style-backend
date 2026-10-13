@@ -118,11 +118,11 @@ def guardar_perfil_avatar():
                     sets.append(key+"=%s")
                     vals.append(json.dumps(value,ensure_ascii=False) if isinstance(value,(dict,list)) else value)
                 vals.append(g.id_usuario)
-                c.execute("UPDATE avatar_perfiles SET "+",".join(sets)+" WHERE id_usuario=%s",vals)
+                c.execute("UPDATE avatar_perfiles SET "+",".join(sets)+" WHERE id_usuario=%s",vals)  # nosec B608: identifiers come only from the permitido allowlist; values are parameterized
             else:
                 columnas=["id_usuario"]+list(cambios.keys())
                 valores=[g.id_usuario]+[json.dumps(v,ensure_ascii=False) if isinstance(v,(dict,list)) else v for v in cambios.values()]
-                c.execute("INSERT INTO avatar_perfiles ("+",".join(columnas)+") VALUES ("+(",".join(["%s"]*len(columnas))+")"),valores)
+                c.execute("INSERT INTO avatar_perfiles ("+",".join(columnas)+") VALUES ("+(",".join(["%s"]*len(columnas))+")"),valores)  # nosec B608: columns are allowlisted and values are parameterized
         conn.commit()
         return jsonify({"success":True,"mensaje":"Perfil del avatar guardado correctamente."}),200
     except Exception:
