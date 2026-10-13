@@ -21,7 +21,7 @@ from backend.security import limiter
 ropa_3d_bp = Blueprint("ropa_3d", __name__)
 MESHY_API = "https://api.meshy.ai/openapi/v1"
 ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
-MAX_IMAGE_BYTES = min(int(getattr(Config, "MAX_CONTENT_LENGTH", 10 * 1024 * 1024)), 10 * 1024 * 1024)
+MAX_IMAGE_BYTES = max(1, min(int(getattr(Config, "MAX_CONTENT_LENGTH", 10 * 1024 * 1024)) - 64 * 1024, 10 * 1024 * 1024))
 
 
 def _asegurar_tabla(cursor):
@@ -92,7 +92,7 @@ def generar_prenda_3d():
         current_app.logger.warning("No se pudo conectar con el proveedor de generación 3D.")
         return jsonify({"error": "No se pudo conectar con el servicio 3D. Inténtalo de nuevo más tarde."}), 502
 
-    if response.status_code not in (200, 201):
+    if response.status_code not in (200, 201, 202):
         if response.status_code == 401:
             current_app.logger.error("Meshy rechazó la clave MESHY_API_KEY.")
             return jsonify({"error": "La clave del servicio 3D no es válida. Revisa MESHY_API_KEY en Render."}), 502
