@@ -64,17 +64,31 @@ def generar_prenda_3d():
             "error": "La generación 3D aún no está configurada. Falta MESHY_API_KEY en las variables de entorno del backend."
         }), 503
 
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": "Envía un objeto JSON válido."}), 400
+    if request.mimetype == "multipart/form-data":
+        category = request.form.get("categoria", "shirts")
+        uploaded = request.files.get("imagen")
+        if not uploaded:
+            return jsonify({"error": "Selecciona una imagen para generar la prenda."}), 400
+        mime = (uploaded.mimetype or "").lower()
+        raw = uploaded.read(MAX_IMAGE_BYTES + 1)
+        if mime not in ALLOWED_MIME:
+            return jsonify({"error": "Envía una imagen JPG, PNG o WebP válida."}), 400
+        if not raw or len(raw) > MAX_IMAGE_BYTES:
+            return jsonify({"error": "La imagen está vacía o supera el límite de 10 MB."}), 400
+        if cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR) is None:
+            return jsonify({"error": "El archivo no contiene una imagen válida."}), 400
+        image_data = f"data:{mime};base64," + base64.b64encode(raw).decode("ascii")
+    else:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Envía un objeto JSON o un archivo de imagen válido."}), 400
+        category = data.get("categoria", "shirts")
+        image_data, error = _leer_imagen_data_url(data.get("imagen"))
+        if error:
+            return jsonify({"error": error}), 400
 
-    category = data.get("categoria", "shirts")
     if category not in {"shirts", "pants", "accessories"}:
         return jsonify({"error": "La categoría debe ser shirts, pants o accessories."}), 400
-
-    image_data, error = _leer_imagen_data_url(data.get("imagen"))
-    if error:
-        return jsonify({"error": error}), 400
 
     try:
         response = requests.post(
