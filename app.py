@@ -25,6 +25,7 @@ from backend.routes.usuarios import usuarios_bp
 from backend.routes.firebase_auth import firebase_auth_bp
 from backend.routes.avatar import avatar_bp
 from backend.routes.ropa import ropa_bp
+from backend.routes.ropa_3d import ropa_3d_bp
 from backend.routes.outfits import outfits_bp
 from backend.routes.ia import ia_bp
 from backend.routes.asistente import asistente_bp
@@ -55,6 +56,7 @@ app.register_blueprint(usuarios_bp, url_prefix="/api")
 app.register_blueprint(firebase_auth_bp, url_prefix="/api")
 app.register_blueprint(avatar_bp, url_prefix="/api")
 app.register_blueprint(ropa_bp, url_prefix="/api")
+app.register_blueprint(ropa_3d_bp, url_prefix="/api")
 app.register_blueprint(outfits_bp, url_prefix="/api")
 app.register_blueprint(ia_bp, url_prefix="/api")
 app.register_blueprint(asistente_bp, url_prefix="/api")
