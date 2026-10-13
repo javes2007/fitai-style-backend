@@ -17,6 +17,7 @@ class Config:
     DB_NAME = os.environ.get("DB_NAME", "fitai_style")
     DB_PORT = int(os.environ.get("DB_PORT", 3306))
     DB_SSL_CA = os.environ.get("DB_SSL_CA")
+    DB_SLOW_QUERY_SECONDS = float(os.environ.get("DB_SLOW_QUERY_SECONDS", "0.5"))
     DB_SSL_CA = os.environ.get("DB_SSL_CA")
 
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
@@ -29,7 +30,7 @@ class Config:
         "https://cdn.jsdelivr.net/gh/nirholas/three.ws@5c7d87a768152cd64a8cce2feef8831411062eb5/public/avatars/parametric-base.glb",
     )
 
-    DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1" and not os.environ.get("RENDER" )
+    DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1" and not os.environ.get("RENDER")
 
     _default_cors_origins = [
         "https://fitai-style-frontend.vercel.app",
