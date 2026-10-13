@@ -45,8 +45,8 @@ def sincronizar_firebase():
     uid = decoded.get("uid")
     email = (decoded.get("email") or "").strip().lower()
     nombre = (decoded.get("name") or email.split("@")[0] or "Usuario").strip()
-    if not uid or not email or decoded.get("email_verified") is not True:
-        return jsonify({"error": "La cuenta de Firebase debe tener un correo verificado."}), 403
+    if not uid or not email:
+        return jsonify({"error": "La cuenta de Firebase no contiene identidad suficiente."}), 400
 
     from backend.models.usuario import Usuario
     from backend.auth.tokens import generar_token
