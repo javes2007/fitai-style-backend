@@ -37,8 +37,9 @@ class Config:
         "http://127.0.0.1:5500",
     ]
     _cors_env = [origin.strip() for origin in os.environ.get("FRONTEND_ORIGINS", "").split(",") if origin.strip()]
-    if os.environ.get("RENDER") and _cors_env:
-        CORS_ORIGINS = [origin for origin in _cors_env if origin.startswith("https://")]
+    if os.environ.get("RENDER"):
+        production_origins = _cors_env or [origin for origin in _default_cors_origins if origin.startswith("https://")]
+        CORS_ORIGINS = list(dict.fromkeys(origin for origin in production_origins if origin.startswith("https://")))
     else:
         CORS_ORIGINS = list(dict.fromkeys(_default_cors_origins + _cors_env))
 
