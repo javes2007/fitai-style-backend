@@ -17,19 +17,17 @@ limiter = Limiter(
 
 
 def configurar_seguridad(app):
-    """Activa cabeceras defensivas y redirección HTTPS en producción."""
+    """Activa cabeceras defensivas, validación JSON y HTTPS en producción."""
     if not app.debug and os.environ.get("TRUST_PROXY_HEADERS", "1") == "1":
         # Render termina TLS en su proxy; confiar solo en el salto inmediato.
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     @app.before_request
-    def exigir_https():
-        if app.debug or os.environ.get("FORCE_HTTPS", "1" if os.environ.get("RENDER") else "0") != "1":
-            return None
-        if request.is_secure:
-            pass
-        elif request.method in {"GET", "HEAD", "OPTIONS"}:
-            return redirect(request.url.replace("http://", "https://", 1), code=308)
+    def controles_entrada():
+        force_https = os.environ.get("FORCE_HTTPS", "1" if os.environ.get("RENDER") else "0") == "1"
+        if force_https and not app.debug and not request.is_secure:
+            if request.method in {"GET", "HEAD", "OPTIONS"}:
+                return redirect(request.url.replace("http://", "https://", 1), code=308)
             return jsonify({"error": "Se requiere HTTPS para esta solicitud."}), 400
 
         # Los endpoints JSON de la API esperan objetos; rechazar arrays,
@@ -47,7 +45,8 @@ def configurar_seguridad(app):
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         response.headers.setdefault("Cross-Origin-Resource-Policy", "same-site")
-        if not app.debug and os.environ.get("FORCE_HTTPS", "1" if os.environ.get("RENDER") else "0") == "1" and request.is_secure:
+        force_https = os.environ.get("FORCE_HTTPS", "1" if os.environ.get("RENDER") else "0") == "1"
+        if not app.debug and force_https and request.is_secure:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if response.mimetype == "application/json" and request.path.startswith(
             ("/api/auth", "/api/login", "/api/register", "/api/usuarios")
