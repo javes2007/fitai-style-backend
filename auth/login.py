@@ -134,6 +134,13 @@ def procesar_login(email, contrasena):
             "error": "La contraseña no es válida."
         }, 400
 
+    # Evita entradas desproporcionadas que consuman CPU/memoria.
+    if len(email) > 254 or len(contrasena) > 1024:
+        return {
+            "success": False,
+            "error": "Correo o contraseña incorrectos."
+        }, 400
+
     # --------------------------------------------------------
     # 3. Normalizar correo
     # --------------------------------------------------------

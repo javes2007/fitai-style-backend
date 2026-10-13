@@ -49,7 +49,7 @@ def _validar_contrasena(contrasena):
     - Al menos una letra.
     - Al menos un número.
     """
-    if len(contrasena) < 8:
+    if len(contrasena) < 8 or len(contrasena) > 128:
         return False
 
     if not re.search(r"[A-Za-z]", contrasena):

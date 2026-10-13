@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify, g
 from backend.auth.tokens import requiere_autenticacion
+from backend.security import limiter
 from backend.database.conexion import obtener_conexion
 import os
 import uuid
@@ -81,7 +82,15 @@ def obtener_perfil_avatar():
 def guardar_perfil_avatar():
     data = request.get_json(silent=True) or {}
     permitido = ("edad","estilo","cuerpo","rostro","cabello","estetica","foto_analizada","avatar_dna")
-    cambios = {k:data[k] for k in permitido if k in data}
+    cambios = {k: data[k] for k in permitido if k in data}
+    if not cambios:
+        return jsonify({"error": "No se recibieron campos permitidos para actualizar."}), 400
+    for campo in ("cuerpo", "rostro", "cabello", "estetica", "avatar_dna"):
+        if campo in cambios:
+            if not isinstance(cambios[campo], (dict, list, type(None))):
+                return jsonify({"error": f"El campo {campo} debe ser un objeto JSON o una lista."}), 400
+            if len(json.dumps(cambios[campo], ensure_ascii=False)) > 20000:
+                return jsonify({"error": f"El campo {campo} supera el tamaño permitido."}), 400
 
     if "edad" in cambios:
         try:
@@ -92,8 +101,8 @@ def guardar_perfil_avatar():
             return jsonify({"error":"La edad debe estar entre 0 y 100 años."}),400
     if "estilo" in cambios:
         cambios["estilo"] = str(cambios["estilo"]).strip()[:50]
-    if "foto_analizada" in cambios:
-        cambios["foto_analizada"] = bool(cambios["foto_analizada"])
+    if "foto_analizada" in cambios and not isinstance(cambios["foto_analizada"], bool):
+        return jsonify({"error": "foto_analizada debe ser verdadero o falso."}), 400
 
     conn=obtener_conexion()
     if not conn:return jsonify({"error":"Base de datos no disponible."}),503
@@ -109,11 +118,11 @@ def guardar_perfil_avatar():
                     sets.append(key+"=%s")
                     vals.append(json.dumps(value,ensure_ascii=False) if isinstance(value,(dict,list)) else value)
                 vals.append(g.id_usuario)
-                c.execute("UPDATE avatar_perfiles SET "+",".join(sets)+" WHERE id_usuario=%s",vals)
+                c.execute("UPDATE avatar_perfiles SET "+",".join(sets)+" WHERE id_usuario=%s",vals)  # nosec B608: identifiers come only from the permitido allowlist; values are parameterized
             else:
                 columnas=["id_usuario"]+list(cambios.keys())
                 valores=[g.id_usuario]+[json.dumps(v,ensure_ascii=False) if isinstance(v,(dict,list)) else v for v in cambios.values()]
-                c.execute("INSERT INTO avatar_perfiles ("+",".join(columnas)+") VALUES ("+(",".join(["%s"]*len(columnas))+")"),valores)
+                c.execute("INSERT INTO avatar_perfiles ("+",".join(columnas)+") VALUES ("+(",".join(["%s"]*len(columnas))+")"),valores)  # nosec B608: columns are allowlisted and values are parameterized
         conn.commit()
         return jsonify({"success":True,"mensaje":"Perfil del avatar guardado correctamente."}),200
     except Exception:
@@ -126,6 +135,8 @@ def guardar_perfil_avatar():
     "/avatar/render",
     methods=["POST"]
 )
+@requiere_autenticacion
+@limiter.limit("5 per minute")
 def render_avatar():
 
     imagen_guardada_path = None

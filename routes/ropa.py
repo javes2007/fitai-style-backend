@@ -259,7 +259,7 @@ def actualizar_prenda(id_prenda):
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                f"UPDATE prendas SET {', '.join(cambios)} WHERE id_prenda=%s AND id_usuario=%s",
+                f"UPDATE prendas SET {', '.join(cambios)} WHERE id_prenda=%s AND id_usuario=%s",  # nosec B608: cambios uses only hard-coded column names
                 [*valores, id_prenda]
             )
             if cursor.rowcount == 0:

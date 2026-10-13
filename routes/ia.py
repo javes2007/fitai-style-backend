@@ -2,6 +2,8 @@ from flask import Blueprint, jsonify, request  # pyright: ignore[reportMissingIm
 from backend.ia.consultor_imagen import consultar_imagen
 from backend.ia.mediapipe_ai import analizar_medidas
 from backend.utils import cache
+from backend.auth.tokens import requiere_autenticacion
+from backend.security import limiter
 
 import logging
 import os
@@ -32,6 +34,8 @@ def _leer_imagen_segura(archivo):
 # ============================================================
 
 @ia_bp.route("/ia/consultor-imagen", methods=["POST"])
+@requiere_autenticacion
+@limiter.limit("5 per minute")
 def consultor_imagen():
 
     archivo = request.files.get("imagen")
@@ -152,6 +156,8 @@ def consultor_imagen():
     "/ia/analizar-medidas",
     methods=["POST"]
 )
+@requiere_autenticacion
+@limiter.limit("5 per minute")
 def analizar_medidas_endpoint():
 
     archivo = request.files.get(
