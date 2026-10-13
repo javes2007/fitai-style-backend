@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from backend.integrations.clima import obtener_clima
 from backend.integrations.google_search import search_fashion
 from backend.utils import cache
+from backend.security import limiter
 
 externos_bp = Blueprint("externos", __name__)
 
@@ -12,6 +13,7 @@ externos_bp = Blueprint("externos", __name__)
 # ============================================================
 
 @externos_bp.route("/clima", methods=["GET"])
+@limiter.limit("30 per minute")
 def clima_actual():
     lat = request.args.get("lat")
     lon = request.args.get("lon")
@@ -24,6 +26,9 @@ def clima_actual():
         lon = float(lon)
     except ValueError:
         return jsonify({"error": "Coordenadas inválidas."}), 400
+
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return jsonify({"error": "Coordenadas fuera de rango."}), 400
 
     # El clima no cambia segundo a segundo: cacheamos 10 min por zona
     # (redondeando las coordenadas) para no gastar cuota de la API.
@@ -48,11 +53,14 @@ def clima_actual():
 # ============================================================
 
 @externos_bp.route("/buscar-estilo", methods=["GET"])
+@limiter.limit("10 per minute")
 def buscar_estilo():
     consulta = request.args.get("q", "").strip()
 
     if not consulta:
         return jsonify({"error": "Escribe qué quieres buscar."}), 400
+    if len(consulta) > 160:
+        return jsonify({"error": "La búsqueda no puede superar 160 caracteres."}), 400
 
     genero = request.args.get("genero") or None
     estilo = request.args.get("estilo") or None
