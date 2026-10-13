@@ -16,6 +16,7 @@ class Config:
     DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
     DB_NAME = os.environ.get("DB_NAME", "fitai_style")
     DB_PORT = int(os.environ.get("DB_PORT", 3306))
+    DB_SSL_CA = os.environ.get("DB_SSL_CA")
 
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
     MAX_CONTENT_LENGTH = int(os.environ.get("MAX_UPLOAD_MB", "10")) * 1024 * 1024
