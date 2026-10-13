@@ -24,7 +24,7 @@ El backend emite JWT Bearer y el frontend actual los guarda en localStorage; por
 1. Configura una `SECRET_KEY` fuerte y única en Render; el servicio falla al iniciar si falta.
 2. Define `FRONTEND_ORIGINS` con dominios HTTPS reales.
 3. Configura `RATELIMIT_STORAGE_URI` con Redis gestionado si escalas a más de un proceso/instancia.
-4. Crea un usuario MySQL dedicado (no root) con permisos mínimos; configura `DB_SSL_CA` para validar TLS cuando el proveedor lo requiera y activa cifrado en reposo en el proveedor. Activa el slow query log/monitorización en el servicio MySQL, porque el proveedor administra esos registros.
+4. Crea un usuario MySQL dedicado (no root) con permisos mínimos; configura `DB_SSL_CA` para validar TLS cuando el proveedor lo requiera y activa cifrado en reposo en el proveedor. El backend registra consultas lentas por huella hash y duración sin imprimir SQL ni parámetros; configura también el slow query log/monitorización del proveedor MySQL.
 5. Revisa reglas de Firebase/Storage y restringe la Firebase Web API key por dominio y API.
 6. Revisa el reporte de Gitleaks y rota cualquier secreto que se detecte.
 7. Espera a que GitHub Actions termine las comprobaciones; no se declara auditoría aprobada hasta entonces.
