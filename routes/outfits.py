@@ -39,7 +39,7 @@ def crear_outfit():
         with conn.cursor() as c:
             if ids:
                 marks=",".join(["%s"]*len(ids))
-                c.execute(f"SELECT id_prenda FROM prendas WHERE id_usuario=%s AND id_prenda IN ({marks})",[g.id_usuario,*ids])
+                c.execute(f"SELECT id_prenda FROM prendas WHERE id_usuario=%s AND id_prenda IN ({marks})",[g.id_usuario,*ids])  # nosec B608: marks comes from list length; values are parameterized
                 valid={r["id_prenda"] for r in c.fetchall()}
                 if valid != set(ids):
                     return jsonify({"error":"Una o más prendas no pertenecen a tu cuenta."}),403
